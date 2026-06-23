@@ -10,7 +10,7 @@
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.x-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
 [![License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-**[🚀 Live Demo](https://project-zenith.vercel.app)** · **[📖 Documentation](#architecture)** · **[🏆 AARUUSH '26](#competition-context)**
+**[🚀 Live Demo](https://zenith-six-eta.vercel.app)** · **[📖 Documentation](#architecture)** · **[🏆 AARUUSH '26](#competition-context)**
 
 </div>
 
@@ -317,7 +317,7 @@ The challenge requires building an innovative web application that leverages rea
 
 <div align="center">
 
-**Built with 🛰️ by Varad Singhal**
+
 
 *"The sky is not the limit — it's just the beginning."*
 
