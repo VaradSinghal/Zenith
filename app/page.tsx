@@ -10,6 +10,7 @@ import { getPlanetPositions } from "@/lib/planets";
 import type { PlanetObject } from "@/lib/planets";
 import { getConstellationLines } from "@/lib/constellations";
 import type { Filters, ConstellationLine } from "@/components/SkyDome";
+import { Map as MapIcon, Telescope, Info } from "lucide-react";
 
 type Tab = "map" | "sky" | "info";
 
@@ -36,8 +37,16 @@ export default function Home() {
   const [isLoaded, setIsLoaded] = useState(false);
   const [mounted, setMounted] = useState(false);
   const [activeTab, setActiveTab] = useState<Tab>("sky");
+  const [mainView, setMainView] = useState<"map" | "sky">("sky");
   const [utcTime, setUtcTime] = useState<Date>(new Date());
   const [kpIndex, setKpIndex] = useState<number>(0);
+
+  const handleTabClick = (tab: Tab) => {
+    setActiveTab(tab);
+    if (tab === "map" || tab === "sky") {
+      setMainView(tab);
+    }
+  };
 
   useEffect(() => {
     setMounted(true);
@@ -159,29 +168,12 @@ export default function Home() {
         </div>
       </header>
 
-      {/* ── Mobile Tab Switcher ── */}
-      <div className="md:hidden flex flex-shrink-0 h-12 bg-[#0c1225] border-b border-[#1a2744]">
-        {(["map", "sky", "info"] as Tab[]).map((tab) => (
-          <button
-            key={tab}
-            onClick={() => setActiveTab(tab)}
-            className={`flex-1 text-xs font-bold uppercase tracking-wider transition-colors ${
-              activeTab === tab
-                ? "text-[#00d4ff] border-b-2 border-[#00d4ff] bg-[#1a2744]/40"
-                : "text-gray-500 hover:text-gray-300"
-            }`}
-          >
-            {tab}
-          </button>
-        ))}
-      </div>
-
       {/* ── Main Layout ── */}
-      <div className="flex-1 relative md:grid md:grid-cols-[340px_1fr_280px] overflow-hidden">
+      <div className="flex-1 relative md:grid md:grid-cols-[340px_1fr_280px] overflow-hidden pb-12 md:pb-0">
         {/* Left: Map */}
         <div
           className={`${
-            activeTab === "map" ? "block" : "hidden"
+            mainView === "map" ? "block" : "hidden"
           } md:block relative h-full border-r border-[#1a2744] z-10`}
         >
           <ObserverMap
@@ -195,7 +187,7 @@ export default function Home() {
         {/* Center: SkyDome + Controls */}
         <div
           className={`${
-            activeTab === "sky" ? "block" : "hidden"
+            mainView === "sky" ? "block" : "hidden"
           } md:block relative h-full z-0 flex flex-col`}
         >
           <div className="flex-1 relative min-h-0">
@@ -214,7 +206,7 @@ export default function Home() {
           </div>
 
           {/* Time & Filter Controls */}
-          <div className="absolute bottom-4 left-1/2 -translate-x-1/2 w-[90%] max-w-lg bg-[#0c1225]/90 border border-[#1a2744] backdrop-blur-md rounded-xl p-3 shadow-xl z-50">
+          <div className="absolute bottom-2 md:bottom-4 left-1/2 -translate-x-1/2 w-[95%] md:w-[90%] max-w-lg bg-[#0c1225]/90 border border-[#1a2744] backdrop-blur-md rounded-xl p-2 md:p-3 shadow-xl z-30">
             {/* Filter Pills */}
             <div className="flex flex-wrap justify-center gap-2 mb-3">
               <button
@@ -303,21 +295,53 @@ export default function Home() {
 
         {/* Right: InfoPanel */}
         <div
-          className={`${
-            activeTab === "info" ? "block" : "hidden"
-          } md:block relative h-full z-20`}
+          className={`
+            fixed md:static left-0 right-0 bottom-12 md:bottom-auto top-20 md:top-auto z-40
+            md:h-full transition-transform duration-300 ease-in-out
+            ${activeTab === "info" ? "translate-y-0" : "translate-y-[120%] md:translate-y-0"}
+            shadow-[0_-8px_32px_rgba(0,0,0,0.8)] md:shadow-none
+            rounded-t-2xl md:rounded-none overflow-hidden bg-[#0c1225]
+          `}
         >
           <InfoPanel
             selectedObj={selectedObj}
             overheadList={combinedList}
             onObjectSelect={(obj) => {
               setSelectedObj(obj);
-              if (window.innerWidth < 768) setActiveTab("sky");
+              if (window.innerWidth < 768) setActiveTab("info");
             }}
             lat={observer.lat}
             lon={observer.lon}
           />
         </div>
+      </div>
+
+      {/* ── Mobile Tab Bar (Bottom) ── */}
+      <div className="md:hidden absolute bottom-0 left-0 right-0 h-12 bg-[#0c1225] border-t border-[#1a2744] flex z-50">
+        <button
+          onClick={() => handleTabClick("map")}
+          className={`flex-1 flex flex-col items-center justify-center transition-colors ${
+            activeTab === "map" ? "text-[#00d4ff] bg-[#1a2744]/40" : "text-gray-500 hover:text-gray-300"
+          }`}
+        >
+          <MapIcon size={20} />
+        </button>
+        <button
+          onClick={() => handleTabClick("sky")}
+          className={`flex-1 flex flex-col items-center justify-center transition-colors ${
+            activeTab === "sky" ? "text-[#00d4ff] bg-[#1a2744]/40" : "text-gray-500 hover:text-gray-300"
+          }`}
+        >
+          <Telescope size={20} />
+        </button>
+        <button
+          onClick={() => handleTabClick("info")}
+          className={`flex-1 flex flex-col items-center justify-center transition-colors ${
+            activeTab === "info" ? "text-[#00d4ff] bg-[#1a2744]/40" : "text-gray-500 hover:text-gray-300"
+          }`}
+        >
+          <Info size={20} />
+        </button>
       </div>
     </main>
   );
