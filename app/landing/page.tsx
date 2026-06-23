@@ -419,10 +419,26 @@ export default function LandingPage() {
           -webkit-mask-image: linear-gradient(to top, transparent 0%, black 15%);
           mask-image: linear-gradient(to top, transparent 0%, black 15%);
         }
+
+        @keyframes shimmer {
+          0% { transform: translateX(-100%); }
+          100% { transform: translateX(350%); }
+        }
       `}} />
 
       {/* Warp Streak Overlay (only visible during warp) */}
       <canvas ref={starCanvasRef} className="fixed inset-0 z-[2] pointer-events-none" />
+
+      {/* Warp Status Text (fades in during warp) */}
+      <div className={`fixed bottom-12 left-1/2 -translate-x-1/2 flex flex-col items-center gap-3 z-[100] transition-opacity duration-1000 delay-300 ${warping ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}>
+        <div className="text-[11px] font-mono tracking-[0.2em] text-white/50 uppercase animate-pulse">
+          Establishing Link...
+        </div>
+        <div className="w-48 h-[1px] bg-white/10 overflow-hidden rounded-full">
+          <div className="h-full bg-white/40 rounded-full animate-[shimmer_1.5s_ease-in-out_infinite]"
+               style={{ width: '40%' }} />
+        </div>
+      </div>
 
       {/* LAYER 3: HTML Overlay */}
       <div className={`relative z-10 w-full transition-opacity duration-500 ${warping ? 'opacity-0' : 'opacity-100'}`}>
