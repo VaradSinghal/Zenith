@@ -16,7 +16,7 @@ export async function POST(req: Request) {
     interface PlanetData { name: string; az: number; el: number; mag: number; }
     const topSats = overhead.slice(0, 5).map((s: SatData) => `${s.name} (Az: ${s.az.toFixed(0)}°, El: ${s.el.toFixed(0)}°)`).join(', ');
     const visPlanets = planets.filter((p: PlanetData) => p.el > 0).map((p: PlanetData) => `${p.name} (Az: ${p.az.toFixed(0)}°, El: ${p.el.toFixed(0)}°, Mag: ${p.mag.toFixed(1)})`).join(', ');
-    
+
     let issStatus = "Not currently overhead.";
     if (issNextPass) {
       issStatus = `Next pass AOS: ${new Date(issNextPass.aosDate).toUTCString()}, max elevation: ${issNextPass.maxEl.toFixed(1)}°`;
@@ -32,7 +32,8 @@ Write a 3-sentence natural language sky briefing for a casual stargazer.
 Be specific with times and directions. Be enthusiastic but factual.
     `.trim();
 
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:streamGenerateContent?alt=sse&key=${apiKey}`;
+    const url =
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
 
     const response = await fetch(url, {
       method: "POST",
@@ -59,13 +60,9 @@ Be specific with times and directions. Be enthusiastic but factual.
       return NextResponse.json({ error: "api_error" }, { status: 502 });
     }
 
-    return new Response(response.body, {
-      headers: {
-        "Content-Type": "text/event-stream",
-        "Cache-Control": "no-cache",
-        "Connection": "keep-alive",
-      },
-    });
+    const data = await response.json();
+    const text = data?.candidates?.[0]?.content?.parts?.[0]?.text || "";
+    return NextResponse.json({ text });
 
   } catch (err) {
     console.error("Briefing error:", err);
