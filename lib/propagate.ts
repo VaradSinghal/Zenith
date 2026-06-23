@@ -1,2 +1,194 @@
-// propagate.ts — SGP4 TLE propagation utilities using satellite.js
-export {};
+import * as satellite from 'satellite.js';
+
+export type ObserverLocation = { lat: number; lon: number; altKm?: number };
+export type SatType = 'iss' | 'starlink' | 'gps' | 'noaa' | 'hubble' | 'tiangong' | 'other';
+export type SatelliteRecord = { name: string; satrec: satellite.SatRec; noradId: number; type: SatType };
+export type OverheadObject = {
+  name: string;
+  az: number;
+  el: number;
+  rangeKm: number;
+  altKm: number;
+  velKmS: number;
+  periodMin: number;
+  mag: number;
+  tier: 'naked' | 'bino' | 'track';
+  type: SatType;
+  noradId: number;
+  satrec: satellite.SatRec;
+  latDeg: number;
+  lonDeg: number;
+};
+
+export function parseTLEBlock(tleText: string): SatelliteRecord[] {
+  const lines = tleText.trim().split('\n').map(l => l.trim()).filter(l => l.length > 0);
+  const records: SatelliteRecord[] = [];
+
+  for (let i = 0; i < lines.length - 2; i++) {
+    const line0 = lines[i];
+    const line1 = lines[i + 1];
+    const line2 = lines[i + 2];
+
+    if (line1.startsWith('1 ') && line2.startsWith('2 ')) {
+      const name = line0.replace(/^0\s+/, '').trim();
+      let type: SatType = 'other';
+      const nameUpper = name.toUpperCase();
+      
+      if (nameUpper.includes('ISS') || nameUpper.includes('ZARYA')) type = 'iss';
+      else if (nameUpper.includes('STARLINK')) type = 'starlink';
+      else if (nameUpper.includes('GPS') || nameUpper.includes('NAVSTAR')) type = 'gps';
+      else if (nameUpper.includes('NOAA')) type = 'noaa';
+      else if (nameUpper.includes('HUBBLE') || nameUpper.includes('HST')) type = 'hubble';
+      else if (nameUpper.includes('TIANHE') || nameUpper.includes('TIANGONG')) type = 'tiangong';
+
+      try {
+        const satrec = satellite.twoline2satrec(line1, line2);
+        if (isNaN(satrec.no) || satrec.no <= 0) {
+          i += 2;
+          continue;
+        }
+
+        const noradId = parseInt(line1.substring(2, 7).trim(), 10) || 0;
+        records.push({ name, satrec, noradId, type });
+      } catch {
+        // Skip parse errors
+      }
+      i += 2;
+    }
+  }
+
+  return records;
+}
+
+export function propagateAll(satellites: SatelliteRecord[], observer: ObserverLocation, date: Date): OverheadObject[] {
+  const gmst = satellite.gstime(date);
+  
+  const observerGd = {
+    longitude: observer.lon * (Math.PI / 180),
+    latitude: observer.lat * (Math.PI / 180),
+    height: observer.altKm || 0
+  };
+  const obsEcf = satellite.geodeticToEcf(observerGd);
+
+  const overhead: OverheadObject[] = [];
+
+  const latRad = observerGd.latitude;
+  const lonRad = observerGd.longitude;
+  const sinLat = Math.sin(latRad);
+  const cosLat = Math.cos(latRad);
+  const sinLon = Math.sin(lonRad);
+  const cosLon = Math.cos(lonRad);
+
+  for (const sat of satellites) {
+    const pv = satellite.propagate(sat.satrec, date);
+    if (!pv || !pv.position || typeof pv.position === 'boolean' || !pv.velocity || typeof pv.velocity === 'boolean') {
+      continue;
+    }
+
+    const posEci = pv.position as satellite.EciVec3<number>;
+    const velEci = pv.velocity as satellite.EciVec3<number>;
+
+    const velKmS = Math.sqrt(velEci.x * velEci.x + velEci.y * velEci.y + velEci.z * velEci.z);
+
+    const posEcf = satellite.eciToEcf(posEci, gmst);
+    
+    // Inline ECF -> Topocentric SEZ -> Az/El math
+    const rx = posEcf.x - obsEcf.x;
+    const ry = posEcf.y - obsEcf.y;
+    const rz = posEcf.z - obsEcf.z;
+    const rangeKm = Math.sqrt(rx * rx + ry * ry + rz * rz);
+    
+    const topS = sinLat * cosLon * rx + sinLat * sinLon * ry - cosLat * rz;
+    const topE = -sinLon * rx + cosLon * ry;
+    const topZ = cosLat * cosLon * rx + cosLat * sinLon * ry + sinLat * rz;
+    
+    const elRad = Math.asin(topZ / rangeKm);
+    const elDeg = elRad * (180 / Math.PI);
+    
+    if (elDeg <= 0) continue; // Skip objects below horizon
+    
+    let azRad = Math.atan2(topE, -topS);
+    if (azRad < 0) azRad += 2 * Math.PI;
+    const azDeg = azRad * (180 / Math.PI);
+    
+    const satGd = satellite.eciToGeodetic(posEci, gmst);
+    const satLatDeg = satGd.latitude * (180 / Math.PI);
+    const satLonDeg = satGd.longitude * (180 / Math.PI);
+    const satAltKm = satGd.height;
+    
+    const periodMin = (2 * Math.PI) / sat.satrec.no;
+
+    let mag = 4.5;
+    if (sat.type === 'iss') mag = -2;
+    else if (sat.type === 'starlink') mag = 3;
+    else if (sat.type === 'gps') mag = 5.5;
+    
+    let tier: 'naked' | 'bino' | 'track' = 'track';
+    if (mag < 3) tier = 'naked';
+    else if (mag < 6) tier = 'bino';
+
+    overhead.push({
+      name: sat.name,
+      az: azDeg,
+      el: elDeg,
+      rangeKm,
+      altKm: satAltKm,
+      velKmS,
+      periodMin,
+      mag,
+      tier,
+      type: sat.type,
+      noradId: sat.noradId,
+      satrec: sat.satrec,
+      latDeg: satLatDeg,
+      lonDeg: satLonDeg
+    });
+  }
+
+  return overhead.sort((a, b) => b.el - a.el);
+}
+
+export function estimateSet(obj: OverheadObject, observer: ObserverLocation): string {
+  const observerGd = {
+    longitude: observer.lon * (Math.PI / 180),
+    latitude: observer.lat * (Math.PI / 180),
+    height: observer.altKm || 0
+  };
+  const obsEcf = satellite.geodeticToEcf(observerGd);
+  
+  const latRad = observerGd.latitude;
+  const lonRad = observerGd.longitude;
+  const sinLat = Math.sin(latRad);
+  const cosLat = Math.cos(latRad);
+  const sinLon = Math.sin(lonRad);
+  const cosLon = Math.cos(lonRad);
+
+  const now = new Date().getTime();
+  
+  for (let step = 1; step <= 20; step++) {
+    const t = new Date(now + step * 30000); // +30s increments
+    const gmst = satellite.gstime(t);
+    const pv = satellite.propagate(obj.satrec, t);
+    
+    if (!pv || !pv.position || typeof pv.position === 'boolean') continue;
+    
+    const posEci = pv.position as satellite.EciVec3<number>;
+    const posEcf = satellite.eciToEcf(posEci, gmst);
+    
+    const rx = posEcf.x - obsEcf.x;
+    const ry = posEcf.y - obsEcf.y;
+    const rz = posEcf.z - obsEcf.z;
+    const rangeKm = Math.sqrt(rx * rx + ry * ry + rz * rz);
+    
+    const topZ = cosLat * cosLon * rx + cosLat * sinLon * ry + sinLat * rz;
+    const elRad = Math.asin(topZ / rangeKm);
+    const elDeg = elRad * (180 / Math.PI);
+    
+    if (elDeg <= 0) {
+      const mins = (step * 30) / 60;
+      return `~${mins} min above horizon`;
+    }
+  }
+  
+  return "Overhead > 10 min";
+}
