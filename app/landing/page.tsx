@@ -89,7 +89,6 @@ export default function LandingPage() {
     let animationFrameId: number;
 
     const render = (time: number) => {
-      const t = time / 1000;
       
       mouse.current.x += (mouse.current.targetX - mouse.current.x) * 0.04;
       mouse.current.y += (mouse.current.targetY - mouse.current.y) * 0.04;
@@ -452,7 +451,7 @@ export default function LandingPage() {
           <div className="absolute z-10 top-12 left-12 md:top-20 md:left-24 pointer-events-auto">
             
             <div className={`${inter.className} anim-fade-in anim-delay-1 text-[10px] tracking-[0.25em] text-[#7d8187] mb-8 uppercase`}>
-              AARUUSH '26 &nbsp;·&nbsp; ASTRALWEB INNOVATE &nbsp;·&nbsp; ROUND 2
+              AARUUSH &apos;26 &nbsp;·&nbsp; ASTRALWEB INNOVATE &nbsp;·&nbsp; ROUND 2
             </div>
             
             <h1 
@@ -542,7 +541,7 @@ export default function LandingPage() {
                 Real-Time Orbital Mechanics
               </h2>
               <p className={`${inter.className} text-[#7d8187] leading-[1.8] text-[16px] font-light max-w-xl`}>
-                Project Zenith doesn't rely on static data or artificial animations. It fetches live Two-Line Element (TLE) sets from NORAD and propagates the exact positions of over 4,000 active satellites using standard SGP4 orbital mathematical models directly in your browser.
+                Project Zenith doesn&apos;t rely on static data or artificial animations. It fetches live Two-Line Element (TLE) sets from NORAD and propagates the exact positions of over 4,000 active satellites using standard SGP4 orbital mathematical models directly in your browser.
               </p>
             </div>
 
