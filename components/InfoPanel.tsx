@@ -123,7 +123,7 @@ export default function InfoPanel({
       if (!res.ok) {
         const errData = await res.json().catch(()=>({}));
         if (errData.error === "missing_api_key") {
-          setBriefingError("Add ANTHROPIC_API_KEY to .env.local for AI briefings");
+          setBriefingError("Add GEMINI_API_KEY to .env.local for AI briefings");
         } else {
           setBriefingError("Failed to fetch briefing.");
         }
@@ -148,9 +148,12 @@ export default function InfoPanel({
               if (dataStr === "[DONE]") continue;
               try {
                 const json = JSON.parse(dataStr);
-                if (json.type === "content_block_delta" && json.delta?.text) {
-                  text += json.delta.text;
-                  setBriefing(text);
+                if (json.candidates && json.candidates.length > 0) {
+                  const part = json.candidates[0].content?.parts?.[0];
+                  if (part && part.text) {
+                    text += part.text;
+                    setBriefing(text);
+                  }
                 }
               } catch (e) {
                 // ignore parse errors for partial chunks

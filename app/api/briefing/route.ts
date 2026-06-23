@@ -4,7 +4,7 @@ export const dynamic = "force-dynamic";
 
 export async function POST(req: Request) {
   try {
-    const apiKey = process.env.ANTHROPIC_API_KEY;
+    const apiKey = process.env.GEMINI_API_KEY;
     if (!apiKey) {
       return NextResponse.json({ error: "missing_api_key" }, { status: 400 });
     }
@@ -30,25 +30,30 @@ Write a 3-sentence natural language sky briefing for a casual stargazer.
 Be specific with times and directions. Be enthusiastic but factual.
     `.trim();
 
-    const response = await fetch("https://api.anthropic.com/v1/messages", {
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:streamGenerateContent?alt=sse&key=${apiKey}`;
+
+    const response = await fetch(url, {
       method: "POST",
       headers: {
-        "x-api-key": apiKey,
-        "anthropic-version": "2023-06-01",
         "content-type": "application/json"
       },
       body: JSON.stringify({
-        model: "claude-3-5-haiku-latest",
-        max_tokens: 300,
-        system: "You are an astronomy guide. Write concise, exciting sky-watching briefings.",
-        messages: [{ role: "user", content: promptText }],
-        stream: true
+        systemInstruction: {
+          parts: [{ text: "You are an astronomy guide. Write concise, exciting sky-watching briefings." }]
+        },
+        contents: [{
+          role: "user",
+          parts: [{ text: promptText }]
+        }],
+        generationConfig: {
+          maxOutputTokens: 300
+        }
       })
     });
 
     if (!response.ok) {
       const text = await response.text();
-      console.error("Anthropic API Error:", text);
+      console.error("Gemini API Error:", text);
       return NextResponse.json({ error: "api_error" }, { status: 502 });
     }
 
