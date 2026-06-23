@@ -88,7 +88,7 @@ export default function LandingPage() {
 
     let animationFrameId: number;
 
-    const render = (time: number) => {
+    const render = () => {
       
       mouse.current.x += (mouse.current.targetX - mouse.current.x) * 0.04;
       mouse.current.y += (mouse.current.targetY - mouse.current.y) * 0.04;
