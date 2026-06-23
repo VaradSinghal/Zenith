@@ -1,0 +1,67 @@
+import { NextResponse } from "next/server";
+
+export const dynamic = "force-dynamic";
+
+export async function POST(req: Request) {
+  try {
+    const apiKey = process.env.ANTHROPIC_API_KEY;
+    if (!apiKey) {
+      return NextResponse.json({ error: "missing_api_key" }, { status: 400 });
+    }
+
+    const body = await req.json();
+    const { observer, overhead, planets, date, issNextPass } = body;
+
+    const topSats = overhead.slice(0, 5).map((s: any) => `${s.name} (Az: ${s.az.toFixed(0)}°, El: ${s.el.toFixed(0)}°)`).join(', ');
+    const visPlanets = planets.filter((p: any) => p.el > 0).map((p: any) => `${p.name} (Az: ${p.az.toFixed(0)}°, El: ${p.el.toFixed(0)}°, Mag: ${p.mag.toFixed(1)})`).join(', ');
+    
+    let issStatus = "Not currently overhead.";
+    if (issNextPass) {
+      issStatus = `Next pass AOS: ${new Date(issNextPass.aosDate).toUTCString()}, max elevation: ${issNextPass.maxEl.toFixed(1)}°`;
+    }
+
+    const promptText = `
+Observer at lat ${observer.lat}, lon ${observer.lon} at ${new Date(date).toUTCString()}.
+Visible satellites: ${topSats || 'None'}
+Planets overhead: ${visPlanets || 'None'}
+ISS next pass: ${issStatus}
+
+Write a 3-sentence natural language sky briefing for a casual stargazer.
+Be specific with times and directions. Be enthusiastic but factual.
+    `.trim();
+
+    const response = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: {
+        "x-api-key": apiKey,
+        "anthropic-version": "2023-06-01",
+        "content-type": "application/json"
+      },
+      body: JSON.stringify({
+        model: "claude-3-5-haiku-latest",
+        max_tokens: 300,
+        system: "You are an astronomy guide. Write concise, exciting sky-watching briefings.",
+        messages: [{ role: "user", content: promptText }],
+        stream: true
+      })
+    });
+
+    if (!response.ok) {
+      const text = await response.text();
+      console.error("Anthropic API Error:", text);
+      return NextResponse.json({ error: "api_error" }, { status: 502 });
+    }
+
+    return new Response(response.body, {
+      headers: {
+        "Content-Type": "text/event-stream",
+        "Cache-Control": "no-cache",
+        "Connection": "keep-alive",
+      },
+    });
+
+  } catch (err) {
+    console.error("Briefing error:", err);
+    return NextResponse.json({ error: "internal_error" }, { status: 500 });
+  }
+}

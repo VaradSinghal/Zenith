@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import type { OverheadObject, PassDetails, NextPassInfo } from "@/lib/propagate";
+import type { OverheadObject, PassDetails, NextPassInfo, SatelliteRecord } from "@/lib/propagate";
 import type { PlanetObject } from "@/lib/planets";
 import { estimateSet, predictPasses, computeNextPass } from "@/lib/propagate";
 
@@ -11,6 +11,7 @@ export interface InfoPanelProps {
   onObjectSelect: (obj: OverheadObject | PlanetObject) => void;
   lat: number;
   lon: number;
+  allSatellites?: SatelliteRecord[];
 }
 
 const SAT_COLORS: Record<string, string> = {
@@ -70,12 +71,100 @@ export default function InfoPanel({
   onObjectSelect,
   lat,
   lon,
+  allSatellites,
 }: InfoPanelProps) {
   const [issCrewList, setIssCrewList] = useState<AstroMember[]>([]);
   const [isCrewExpanded, setIsCrewExpanded] = useState(true);
   const [passes, setPasses] = useState<PassDetails[]>([]);
   const [nextPass, setNextPass] = useState<NextPassInfo | null>(null);
   const [nowTime, setNowTime] = useState<number>(Date.now());
+  
+  const [briefing, setBriefing] = useState<string>("");
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [briefingError, setBriefingError] = useState("");
+  const [lastBriefingLoc, setLastBriefingLoc] = useState<{lat: number, lon: number, time: number} | null>(null);
+
+  const fetchBriefing = async (forceRefresh = false) => {
+    if (!forceRefresh && lastBriefingLoc &&
+        Math.abs(lastBriefingLoc.lat - lat) < 0.001 &&
+        Math.abs(lastBriefingLoc.lon - lon) < 0.001 &&
+        Date.now() - lastBriefingLoc.time < 10 * 60 * 1000 &&
+        briefing) {
+      return;
+    }
+
+    setIsGenerating(true);
+    setBriefing("");
+    setBriefingError("");
+
+    try {
+      const overhead = overheadList.filter((o) => 'satrec' in o);
+      const planets = overheadList.filter((o) => !('satrec' in o));
+      let issNextPass = null;
+      if (allSatellites) {
+        const issRec = allSatellites.find(s => s.type === "iss");
+        if (issRec) {
+          issNextPass = computeNextPass(issRec.satrec, {lat, lon}, new Date());
+        }
+      }
+
+      const res = await fetch("/api/briefing", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          observer: { lat, lon },
+          overhead,
+          planets,
+          date: new Date().toISOString(),
+          issNextPass
+        })
+      });
+
+      if (!res.ok) {
+        const errData = await res.json().catch(()=>({}));
+        if (errData.error === "missing_api_key") {
+          setBriefingError("Add ANTHROPIC_API_KEY to .env.local for AI briefings");
+        } else {
+          setBriefingError("Failed to fetch briefing.");
+        }
+        setIsGenerating(false);
+        return;
+      }
+
+      setLastBriefingLoc({ lat, lon, time: Date.now() });
+
+      const reader = res.body?.getReader();
+      const decoder = new TextDecoder("utf-8");
+      if (reader) {
+        let text = "";
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          const chunk = decoder.decode(value, { stream: true });
+          const lines = chunk.split("\n");
+          for (const line of lines) {
+            if (line.startsWith("data: ")) {
+              const dataStr = line.slice(6);
+              if (dataStr === "[DONE]") continue;
+              try {
+                const json = JSON.parse(dataStr);
+                if (json.type === "content_block_delta" && json.delta?.text) {
+                  text += json.delta.text;
+                  setBriefing(text);
+                }
+              } catch (e) {
+                // ignore parse errors for partial chunks
+              }
+            }
+          }
+        }
+      }
+    } catch (e) {
+      setBriefingError("Network error while generating briefing.");
+    } finally {
+      setIsGenerating(false);
+    }
+  };
 
   useEffect(() => {
     const int = setInterval(() => setNowTime(Date.now()), 1000);
@@ -384,6 +473,47 @@ export default function InfoPanel({
                   ))}
                 </div>
               </div>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* ── MIDDLE: Tonight's Briefing ──────────────────────────────────────── */}
+      <div className="flex-shrink-0 border-b border-[#1a2744] p-4 bg-[#080b18]">
+        {!briefing && !isGenerating && !briefingError ? (
+          <button
+            onClick={() => fetchBriefing(false)}
+            className="w-full py-2.5 rounded-lg border border-[#00d4ff]/40 bg-[#00d4ff]/10 text-[#00d4ff] hover:bg-[#00d4ff]/20 transition-colors font-bold text-sm tracking-wider uppercase flex items-center justify-center gap-2 shadow-[0_0_12px_rgba(0,212,255,0.2)]"
+          >
+            <span>🌟</span> Tonight's Briefing
+          </button>
+        ) : (
+          <div className="relative bg-[#0c1225] border border-[#00d4ff]/30 rounded-lg p-4 shadow-[0_0_15px_rgba(0,212,255,0.1)]">
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-[#00d4ff] font-bold text-xs uppercase tracking-widest flex items-center gap-2">
+                <span>🌟</span> AI Briefing
+              </h3>
+              <button
+                onClick={() => fetchBriefing(true)}
+                disabled={isGenerating}
+                className="text-gray-500 hover:text-[#00d4ff] transition-colors disabled:opacity-50"
+                title="Regenerate"
+              >
+                ↻
+              </button>
+            </div>
+            
+            {briefingError ? (
+              <div className="text-red-400 text-xs font-mono">{briefingError}</div>
+            ) : (
+              <div className="text-gray-300 text-sm leading-relaxed" style={{ fontFamily: 'Georgia, serif', fontStyle: 'italic' }}>
+                {briefing}
+                {isGenerating && <span className="inline-block w-2 h-4 ml-1 bg-[#00d4ff] animate-pulse align-middle" />}
+              </div>
+            )}
+            
+            {isGenerating && !briefing && (
+              <div className="text-[#00d4ff] text-xs font-mono animate-pulse mt-1">Generating...</div>
             )}
           </div>
         )}

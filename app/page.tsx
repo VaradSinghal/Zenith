@@ -371,6 +371,7 @@ export default function Home() {
             }}
             lat={observer.lat}
             lon={observer.lon}
+            allSatellites={satellites}
           />
         </div>
       </div>
