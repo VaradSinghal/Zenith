@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import ObserverMap from "@/components/ObserverMap";
 import SkyDome from "@/components/SkyDome";
 import InfoPanel from "@/components/InfoPanel";
-import { parseTLEBlock, propagateAll } from "@/lib/propagate";
+import { parseTLEBlock, propagateAll, FALLBACK_TLES } from "@/lib/propagate";
 import type { SatelliteRecord, OverheadObject } from "@/lib/propagate";
 import { getPlanetPositions } from "@/lib/planets";
 import type { PlanetObject } from "@/lib/planets";
@@ -35,6 +35,8 @@ export default function Home() {
 
   const [timeOffsetMin, setTimeOffsetMin] = useState(0);
   const [isLoaded, setIsLoaded] = useState(false);
+  const [showLoader, setShowLoader] = useState(true);
+  const [loadingPhase, setLoadingPhase] = useState("Initializing...");
   const [mounted, setMounted] = useState(false);
   const [activeTab, setActiveTab] = useState<Tab>("sky");
   const [mainView, setMainView] = useState<"map" | "sky">("sky");
@@ -55,19 +57,30 @@ export default function Home() {
   /* ── 1. Fetch TLEs ────────────────────────────────────────────────────────── */
   useEffect(() => {
     async function fetchAll() {
+      setLoadingPhase("Fetching satellites...");
       const groups = ["stations", "visual", "starlink", "gps-ops", "weather"];
+      let combined = "";
       try {
         const fetches = groups.map((g) =>
           fetch(`/api/tle?group=${g}`).then((r) => r.text())
         );
         const texts = await Promise.all(fetches);
-        const combined = texts.join("\n");
-        const parsed = parseTLEBlock(combined);
-        setSatellites(parsed);
-        setIsLoaded(true);
+        combined = texts.join("\n");
       } catch (e) {
         console.error("Failed to load TLEs:", e);
+        combined = FALLBACK_TLES;
       }
+
+      setLoadingPhase("Computing positions...");
+      await new Promise(r => setTimeout(r, 400));
+      const parsed = parseTLEBlock(combined);
+      setSatellites(parsed);
+
+      setLoadingPhase("Rendering sky dome...");
+      await new Promise(r => setTimeout(r, 400));
+      setIsLoaded(true);
+
+      setTimeout(() => setShowLoader(false), 500);
     }
     fetchAll();
   }, []);
@@ -132,6 +145,51 @@ export default function Home() {
 
   return (
     <main className="flex flex-col h-[100dvh] w-full overflow-hidden bg-[#060818] text-[#ededed]">
+      {/* ── Loading Overlay ── */}
+      {showLoader && (
+        <div
+          className={`fixed inset-0 z-[100] flex flex-col items-center justify-center bg-[#060818] transition-opacity duration-500 ${
+            isLoaded ? "opacity-0 pointer-events-none" : "opacity-100"
+          }`}
+        >
+          <div className="relative w-32 h-32 mb-8">
+            <svg
+              viewBox="0 0 100 100"
+              className="w-full h-full animate-[spin_4s_linear_infinite]"
+            >
+              <circle
+                cx="50"
+                cy="50"
+                r="45"
+                fill="none"
+                stroke="#1a2744"
+                strokeWidth="2"
+              />
+              <circle
+                cx="50"
+                cy="50"
+                r="45"
+                fill="none"
+                stroke="#00d4ff"
+                strokeWidth="2"
+                strokeDasharray="60 222"
+                strokeLinecap="round"
+              />
+              <circle cx="95" cy="50" r="3" fill="#e066ff" className="animate-pulse" />
+            </svg>
+            <div className="absolute inset-0 flex items-center justify-center">
+              <span className="text-2xl opacity-80">🌍</span>
+            </div>
+          </div>
+          <h1 className="text-3xl font-bold tracking-[0.2em] text-transparent bg-clip-text bg-gradient-to-r from-[#00d4ff] to-[#e066ff] mb-4">
+            PROJECT ZENITH
+          </h1>
+          <div className="text-sm font-mono text-[#00d4ff] animate-pulse">
+            {loadingPhase}
+          </div>
+        </div>
+      )}
+
       {/* ── Header ── */}
       <header className="flex-shrink-0 h-14 border-b border-[#1a2744] bg-[#0c1225]/95 flex items-center justify-between px-4 z-50">
         <div className="flex items-center gap-4">
