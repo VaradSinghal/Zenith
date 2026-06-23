@@ -28,6 +28,7 @@ export default function Home() {
     showPlanets: true,
     showConstellations: true,
     showStars: true,
+    showAurora: true,
     minTier: "track",
   });
 
@@ -36,6 +37,7 @@ export default function Home() {
   const [mounted, setMounted] = useState(false);
   const [activeTab, setActiveTab] = useState<Tab>("sky");
   const [utcTime, setUtcTime] = useState<Date>(new Date());
+  const [kpIndex, setKpIndex] = useState<number>(0);
 
   useEffect(() => {
     setMounted(true);
@@ -94,8 +96,30 @@ export default function Home() {
     return () => clearInterval(clock);
   }, []);
 
+  /* ── 5. Aurora Polling ──────────────────────────────────────────────────── */
+  useEffect(() => {
+    async function fetchKp() {
+      try {
+        const res = await fetch("/api/aurora");
+        const data = await res.json();
+        if (data && typeof data.kp === "number") {
+          setKpIndex(data.kp);
+        }
+      } catch (e) {
+        console.error("Failed to fetch aurora:", e);
+      }
+    }
+    fetchKp();
+    const interval = setInterval(fetchKp, 15 * 60 * 1000);
+    return () => clearInterval(interval);
+  }, []);
+
   /* ── Render Helpers ─────────────────────────────────────────────────────── */
   const combinedList = [...planets, ...overhead];
+  
+  const auroraPole = 
+    kpIndex >= 5 && observer.lat > 50 ? "N" : 
+    kpIndex >= 5 && observer.lat < -50 ? "S" : null;
 
   return (
     <main className="flex flex-col h-[100dvh] w-full overflow-hidden bg-[#060818] text-[#ededed]">
@@ -112,6 +136,9 @@ export default function Home() {
         </div>
 
         <div className="flex items-center gap-4">
+          <div className="hidden md:flex text-xs font-mono font-bold text-[#00ff88]">
+            Kp {kpIndex.toFixed(2)}
+          </div>
           <div className="text-xs font-mono text-[#00d4ff] w-[150px] text-right">
             {mounted ? `${utcTime.toISOString().replace("T", " ").substring(0, 19)} UTC` : "--:--:-- UTC"}
           </div>
@@ -178,6 +205,7 @@ export default function Home() {
               constLines={constLines}
               filters={filters}
               selectedObj={selectedObj || undefined}
+              auroraPole={auroraPole}
               onObjectSelect={(obj) => {
                 setSelectedObj(obj);
                 if (window.innerWidth < 768) setActiveTab("info");
@@ -236,6 +264,18 @@ export default function Home() {
                 }`}
               >
                 Stars
+              </button>
+              <button
+                onClick={() =>
+                  setFilters((f) => ({ ...f, showAurora: !f.showAurora }))
+                }
+                className={`px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider transition-colors border ${
+                  filters.showAurora
+                    ? "bg-[#00ff88]/20 text-[#00ff88] border-[#00ff88]/40"
+                    : "bg-[#1a2744] text-gray-500 border-gray-700"
+                }`}
+              >
+                Aurora
               </button>
             </div>
 

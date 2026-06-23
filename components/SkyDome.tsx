@@ -16,15 +16,17 @@ export interface Filters {
   showPlanets: boolean;
   showConstellations: boolean;
   showStars: boolean;
+  showAurora: boolean;
   minTier: "naked" | "bino" | "track";
 }
 
-interface SkyDomeProps {
+export interface SkyDomeProps {
   overhead: OverheadObject[];
   planets: PlanetObject[];
   constLines: ConstellationLine[];
   filters: Filters;
   selectedObj?: OverheadObject | PlanetObject;
+  auroraPole?: "N" | "S" | null;
   onObjectSelect: (obj: OverheadObject | PlanetObject) => void;
 }
 
@@ -86,6 +88,7 @@ export default function SkyDome({
   constLines,
   filters,
   selectedObj,
+  auroraPole,
   onObjectSelect,
 }: SkyDomeProps) {
   const wrapperRef = useRef<HTMLDivElement>(null);
@@ -201,6 +204,29 @@ export default function SkyDome({
         ctx.textAlign = "center";
         ctx.textBaseline = "middle";
         ctx.fillText(label, labelPt.x, labelPt.y);
+      }
+
+      /* 4.5 Aurora Band */
+      if (auroraPole && filters.showAurora) {
+        const centerAzR = auroraPole === "N" ? -Math.PI : 0;
+        const innerR = R * (1 - 20 / 90);
+        
+        ctx.save();
+        const grad = ctx.createRadialGradient(cx, cy, innerR, cx, cy, R);
+        grad.addColorStop(0, "rgba(0, 255, 136, 0)");
+        grad.addColorStop(0.5, "rgba(0, 255, 136, 0.15)");
+        grad.addColorStop(1, "rgba(0, 255, 136, 0.4)");
+        
+        ctx.beginPath();
+        ctx.arc(cx, cy, R, centerAzR - Math.PI / 3, centerAzR + Math.PI / 3);
+        ctx.arc(cx, cy, innerR, centerAzR + Math.PI / 3, centerAzR - Math.PI / 3, true);
+        ctx.closePath();
+        
+        ctx.fillStyle = grad;
+        // Optional: composite operation for glowing blend
+        ctx.globalCompositeOperation = "screen";
+        ctx.fill();
+        ctx.restore();
       }
 
       /* 5. Background stars */
@@ -402,7 +428,7 @@ export default function SkyDome({
 
       hittableRef.current = hittable;
     },
-    [overhead, planets, constLines, filters, selectedObj]
+    [overhead, planets, constLines, filters, selectedObj, auroraPole]
   );
 
   /* ── Animation loop at ~10fps for ISS pulse ─────────────────────── */
