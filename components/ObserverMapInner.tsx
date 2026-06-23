@@ -98,6 +98,8 @@ export default function ObserverMapInner({
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<NominatimResult[]>([]);
   const [isSearching, setIsSearching] = useState(false);
+  const [selectedIndex, setSelectedIndex] = useState(-1);
+  const [toastMsg, setToastMsg] = useState("");
 
   /* ── Observer icon ──────────────────────────────────────────────── */
   const observerIcon = useRef(
@@ -176,6 +178,9 @@ export default function ObserverMapInner({
   /* ── Update observer marker when lat/lon changes ────────────────── */
   useEffect(() => {
     if (!mapRef.current || !observerMarkerRef.current) return;
+    const currentLatLng = observerMarkerRef.current.getLatLng();
+    if (currentLatLng.lat === lat && currentLatLng.lng === lon) return;
+
     observerMarkerRef.current.setLatLng([lat, lon]);
     mapRef.current.setView([lat, lon], mapRef.current.getZoom());
   }, [lat, lon]);
@@ -247,23 +252,57 @@ export default function ObserverMapInner({
   /* ── City search (Nominatim) ────────────────────────────────────── */
   const handleSearch = useCallback(
     async (query: string) => {
-      if (!query.trim()) {
+      const q = query.trim();
+      if (!q) {
         setSearchResults([]);
+        setSelectedIndex(-1);
         return;
       }
       setIsSearching(true);
+      
+      const latLonMatch = q.match(/^(-?[\d.]+),\s*(-?[\d.]+)$/);
+      if (latLonMatch) {
+        const rLat = parseFloat(latLonMatch[1]);
+        const rLon = parseFloat(latLonMatch[2]);
+        if (!isNaN(rLat) && !isNaN(rLon)) {
+          setSearchResults([{
+            display_name: `${rLat.toFixed(4)}, ${rLon.toFixed(4)}`,
+            lat: rLat.toString(),
+            lon: rLon.toString()
+          }]);
+          setIsSearching(false);
+          return;
+        }
+      }
+
+      const uq = q.toUpperCase();
+      if (uq === "ISS") {
+        if (issMarkerRef.current) {
+          const latlng = issMarkerRef.current.getLatLng();
+          setSearchResults([{
+            display_name: "Current ISS Location",
+            lat: latlng.lat.toString(),
+            lon: latlng.lng.toString()
+          }]);
+        }
+        setIsSearching(false);
+        return;
+      } else if (uq === "SRM" || uq === "SRMIST") {
+        setSearchResults([{
+          display_name: "SRMIST (Chennai, India)",
+          lat: "12.8230",
+          lon: "80.0444"
+        }]);
+        setIsSearching(false);
+        return;
+      }
+
       try {
-        const res = await fetch(
-          `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(
-            query
-          )}&limit=5`,
-          {
-            headers: { "User-Agent": "Project-Zenith/1.0" },
-          }
-        );
+        const res = await fetch(`/api/geocode?q=${encodeURIComponent(q)}`);
         if (!res.ok) return;
         const data: NominatimResult[] = await res.json();
         setSearchResults(data);
+        setSelectedIndex(-1);
       } catch {
         setSearchResults([]);
       } finally {
@@ -276,16 +315,56 @@ export default function ObserverMapInner({
   const searchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const onSearchInput = (value: string) => {
     setSearchQuery(value);
+    setSelectedIndex(-1);
     if (searchTimeoutRef.current) clearTimeout(searchTimeoutRef.current);
     searchTimeoutRef.current = setTimeout(() => handleSearch(value), 400);
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      setSelectedIndex((prev) => Math.min(prev + 1, searchResults.length - 1));
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault();
+      setSelectedIndex((prev) => Math.max(prev - 1, -1));
+    } else if (e.key === "Enter") {
+      e.preventDefault();
+      if (selectedIndex >= 0 && selectedIndex < searchResults.length) {
+        selectResult(searchResults[selectedIndex]);
+      } else if (searchResults.length > 0) {
+        selectResult(searchResults[0]);
+      }
+    } else if (e.key === "Escape") {
+      setSearchResults([]);
+      setSelectedIndex(-1);
+      e.currentTarget.blur();
+    }
   };
 
   const selectResult = (result: NominatimResult) => {
     const rLat = parseFloat(result.lat);
     const rLon = parseFloat(result.lon);
+    
+    // Notify parent state
     onLocationSelect(rLat, rLon);
-    setSearchQuery(result.display_name.split(",")[0]);
+    
+    // Perform internal map animations immediately for responsiveness
+    if (mapRef.current) {
+      mapRef.current.flyTo([rLat, rLon], 6, { duration: 1.2 });
+    }
+    if (observerMarkerRef.current) {
+      observerMarkerRef.current.setLatLng([rLat, rLon]);
+    }
+    
+    // Toast notification
+    let shortName = result.display_name.split(",")[0];
+    if (shortName.length > 30) shortName = shortName.substring(0, 30) + "…";
+    setToastMsg(`📍 ${shortName}`);
+    setTimeout(() => setToastMsg(""), 1500);
+
+    setSearchQuery("");
     setSearchResults([]);
+    setSelectedIndex(-1);
   };
 
   /* ── Geolocation ────────────────────────────────────────────────── */
@@ -307,19 +386,20 @@ export default function ObserverMapInner({
       {/* Map container */}
       <div ref={mapContainerRef} className="absolute inset-0 z-0" />
 
-      {/* City search — top-left overlay */}
-      <div className="absolute top-3 left-3 z-[1000] w-64">
+      {/* City search — 100% width header overlay */}
+      <div className="absolute top-3 left-0 right-12 z-[1000] px-3">
         <div className="relative">
           <input
             id="city-search-input"
             type="text"
             value={searchQuery}
             onChange={(e) => onSearchInput(e.target.value)}
-            placeholder="Search city…"
+            onKeyDown={handleKeyDown}
+            placeholder="Search city or lat, lon..."
             className="w-full px-3 py-2 rounded-lg text-sm
               bg-[#0c1225]/90 text-white border border-[#1a2744]
               backdrop-blur-md placeholder-gray-500
-              focus:outline-none focus:border-[#00d4ff]/50 focus:ring-1 focus:ring-[#00d4ff]/30
+              focus:outline-none focus:border-[#00d4ff]/80 focus:ring-1 focus:ring-[#00d4ff]/30
               transition-all"
           />
           {isSearching && (
@@ -331,19 +411,31 @@ export default function ObserverMapInner({
 
         {searchResults.length > 0 && (
           <ul className="mt-1 rounded-lg overflow-hidden bg-[#0c1225]/95 border border-[#1a2744] backdrop-blur-md shadow-xl">
-            {searchResults.map((r, i) => (
-              <li key={i}>
-                <button
-                  className="w-full text-left px-3 py-2 text-xs text-gray-300 hover:bg-[#1a2744] hover:text-white transition-colors truncate"
-                  onClick={() => selectResult(r)}
-                >
-                  {r.display_name}
-                </button>
-              </li>
-            ))}
+            {searchResults.map((r, i) => {
+              const truncated = r.display_name.length > 50 ? r.display_name.substring(0, 47) + "..." : r.display_name;
+              return (
+                <li key={i}>
+                  <button
+                    className={`w-full text-left px-3 py-2 text-xs transition-colors truncate
+                      ${i === selectedIndex ? "bg-[#1a2744] text-white" : "text-gray-300 hover:bg-[#1a2744] hover:text-white"}
+                    `}
+                    onClick={() => selectResult(r)}
+                  >
+                    {truncated}
+                  </button>
+                </li>
+              );
+            })}
           </ul>
         )}
       </div>
+
+      {/* Confirmation Toast */}
+      {toastMsg && (
+        <div className="absolute top-16 left-1/2 -translate-x-1/2 z-[1000] px-4 py-2 bg-[#00d4ff]/20 text-[#00d4ff] text-xs font-bold rounded-full border border-[#00d4ff]/40 shadow-lg backdrop-blur animate-[fade-in-down_0.2s_ease-out]">
+          {toastMsg}
+        </div>
+      )}
 
       {/* Geolocation button — top-right overlay */}
       <button
