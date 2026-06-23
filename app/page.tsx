@@ -33,8 +33,13 @@ export default function Home() {
 
   const [timeOffsetMin, setTimeOffsetMin] = useState(0);
   const [isLoaded, setIsLoaded] = useState(false);
+  const [mounted, setMounted] = useState(false);
   const [activeTab, setActiveTab] = useState<Tab>("sky");
   const [utcTime, setUtcTime] = useState<Date>(new Date());
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   /* ── 1. Fetch TLEs ────────────────────────────────────────────────────────── */
   useEffect(() => {
@@ -107,8 +112,8 @@ export default function Home() {
         </div>
 
         <div className="flex items-center gap-4">
-          <div className="text-xs font-mono text-[#00d4ff]">
-            {utcTime.toISOString().replace("T", " ").substring(0, 19)} UTC
+          <div className="text-xs font-mono text-[#00d4ff] w-[150px] text-right">
+            {mounted ? `${utcTime.toISOString().replace("T", " ").substring(0, 19)} UTC` : "--:--:-- UTC"}
           </div>
           <div className="hidden sm:flex text-xs font-mono text-gray-400">
             {overhead.length} overhead
