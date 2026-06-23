@@ -26,6 +26,33 @@ const SAT_COLORS: Record<string, string> = {
   moon: "#d4dce8",
 };
 
+const ASTRO_INFO: Record<string, { flag: string; launch: string }> = {
+  "Oleg Kononenko": { flag: "🇷🇺", launch: "2023-09-15T15:44:00Z" },
+  "Nikolai Chub": { flag: "🇷🇺", launch: "2023-09-15T15:44:00Z" },
+  "Tracy Caldwell-Dyson": { flag: "🇺🇸", launch: "2024-03-23T12:36:00Z" },
+  "Matthew Dominick": { flag: "🇺🇸", launch: "2024-03-04T03:53:00Z" },
+  "Michael Barratt": { flag: "🇺🇸", launch: "2024-03-04T03:53:00Z" },
+  "Jeanette Epps": { flag: "🇺🇸", launch: "2024-03-04T03:53:00Z" },
+  "Alexander Grebenkin": { flag: "🇷🇺", launch: "2024-03-04T03:53:00Z" },
+  "Barry Wilmore": { flag: "🇺🇸", launch: "2024-06-05T14:52:00Z" },
+  "Sunita Williams": { flag: "🇺🇸", launch: "2024-06-05T14:52:00Z" },
+  "Aleksey Ovchinin": { flag: "🇷🇺", launch: "2024-09-11T16:23:00Z" },
+  "Ivan Vagner": { flag: "🇷🇺", launch: "2024-09-11T16:23:00Z" },
+  "Donald Pettit": { flag: "🇺🇸", launch: "2024-09-11T16:23:00Z" },
+  "Oleg Novitsky": { flag: "🇷🇺", launch: "2024-03-23T12:36:00Z" },
+  "Marina Vasilevskaya": { flag: "🇧🇾", launch: "2024-03-23T12:36:00Z" },
+  "Loral O'Hara": { flag: "🇺🇸", launch: "2023-09-15T15:44:00Z" },
+  "Satoshi Furukawa": { flag: "🇯🇵", launch: "2023-08-26T07:27:00Z" },
+  "Andreas Mogensen": { flag: "🇩🇰", launch: "2023-08-26T07:27:00Z" },
+  "Jasmin Moghbeli": { flag: "🇺🇸", launch: "2023-08-26T07:27:00Z" },
+  "Konstantin Borisov": { flag: "🇷🇺", launch: "2023-08-26T07:27:00Z" },
+};
+
+export interface AstroMember {
+  name: string;
+  craft: string;
+}
+
 export default function InfoPanel({
   selectedObj,
   overheadList,
@@ -33,22 +60,22 @@ export default function InfoPanel({
   lat,
   lon,
 }: InfoPanelProps) {
-  const [issCrew, setIssCrew] = useState<number | null>(null);
+  const [issCrewList, setIssCrewList] = useState<AstroMember[]>([]);
+  const [isCrewExpanded, setIsCrewExpanded] = useState(true);
   const [passes, setPasses] = useState<PassDetails[]>([]);
 
   useEffect(() => {
-    fetch("/api/astros")
-      .then((res) => res.json())
-      .then((data) => {
-        if (data && data.people) {
-          const issCount = data.people.filter(
-            (p: { craft: string }) => p.craft === "ISS"
-          ).length;
-          setIssCrew(issCount);
-        }
-      })
-      .catch(() => {});
-  }, []);
+    if (selectedObj?.type === "iss") {
+      fetch("/api/iss-crew")
+        .then((res) => res.json())
+        .then((data) => {
+          if (data && data.crew) {
+            setIssCrewList(data.crew);
+          }
+        })
+        .catch(() => {});
+    }
+  }, [selectedObj?.type]);
 
   // Is it a satellite?
   const isSat = selectedObj && "satrec" in selectedObj;
@@ -191,13 +218,58 @@ export default function InfoPanel({
                   <span className="font-mono text-[#00d4ff]">{setEstimate}</span>
                 </div>
               )}
-              {selectedObj.type === "iss" && issCrew !== null && (
-                <div className="flex justify-between items-center bg-[#0c2a1e]/40 px-3 py-2 rounded text-xs border border-[#166534]">
-                  <span className="text-green-400">Humans Aboard</span>
-                  <span className="font-mono text-green-300 font-bold">{issCrew}</span>
-                </div>
-              )}
             </div>
+
+            {/* Live Crew Collapsible Section */}
+            {selectedObj.type === "iss" && issCrewList.length > 0 && (
+              <div className="mt-4 border-t border-[#1a2744] pt-4">
+                <button 
+                  onClick={() => setIsCrewExpanded(!isCrewExpanded)}
+                  className="w-full flex items-center justify-between hover:opacity-80 transition-opacity"
+                >
+                  <div className="flex items-center gap-2">
+                    <div className="w-2 h-2 rounded-full bg-[#00ff88] animate-pulse shadow-[0_0_8px_#00ff88]" />
+                    <h3 className="text-xs font-bold text-gray-300 uppercase tracking-widest">
+                      Live Crew
+                    </h3>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <span className="text-[12px] font-mono font-bold text-[#00ff88] bg-[#00ff88]/10 px-2.5 py-0.5 rounded-full border border-[#00ff88]/30">
+                      {issCrewList.length}
+                    </span>
+                    <span className="text-gray-500 text-xs">
+                      {isCrewExpanded ? "▼" : "▶"}
+                    </span>
+                  </div>
+                </button>
+                
+                {isCrewExpanded && (
+                  <div className="mt-3 flex flex-col gap-2">
+                    {issCrewList.map((member, i) => {
+                      const info = ASTRO_INFO[member.name] || { flag: "🌐", launch: "2024-01-01T00:00:00Z" };
+                      const days = Math.floor((Date.now() - new Date(info.launch).getTime()) / (1000 * 60 * 60 * 24));
+                      return (
+                        <div 
+                          key={member.name} 
+                          className="flex items-center justify-between bg-[#1a2744]/30 px-3 py-2 rounded border border-[#1a2744] animate-[fade-in_0.3s_ease-out_both]"
+                          style={{ animationDelay: `${i * 50}ms` }}
+                        >
+                          <div className="flex items-center gap-2">
+                            <span className="text-sm">{info.flag}</span>
+                            <span className="text-[13px] font-medium text-gray-200">
+                              {member.name}
+                            </span>
+                          </div>
+                          <div className="text-[10px] font-mono text-[#00d4ff]">
+                            {Math.max(0, days)}d in space
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            )}
 
             {/* Pass Prediction Timeline */}
             {passes.length > 0 && (
