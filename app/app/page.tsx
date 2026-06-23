@@ -144,49 +144,30 @@ export default function Home() {
     kpIndex >= 5 && observer.lat < -50 ? "S" : null;
 
   return (
-    <main className="flex flex-col h-[100dvh] w-full overflow-hidden bg-[#060818] text-[#ededed]">
+    <main className="flex flex-col h-[100dvh] w-full overflow-hidden bg-[#0c0c0b] text-[#ededed]">
       {/* ── Loading Overlay ── */}
       {showLoader && (
         <div
-          className={`fixed inset-0 z-[100] flex flex-col items-center justify-center bg-[#060818] transition-opacity duration-500 ${
+          className={`fixed inset-0 z-[100] transition-opacity duration-1000 ${
             isLoaded ? "opacity-0 pointer-events-none" : "opacity-100"
           }`}
         >
-          <div className="relative w-32 h-32 mb-8">
-            <svg
-              viewBox="0 0 100 100"
-              className="w-full h-full animate-[spin_4s_linear_infinite]"
-            >
-              <circle
-                cx="50"
-                cy="50"
-                r="45"
-                fill="none"
-                stroke="#1a2744"
-                strokeWidth="2"
-              />
-              <circle
-                cx="50"
-                cy="50"
-                r="45"
-                fill="none"
-                stroke="#00d4ff"
-                strokeWidth="2"
-                strokeDasharray="60 222"
-                strokeLinecap="round"
-              />
-              <circle cx="95" cy="50" r="3" fill="#e066ff" className="animate-pulse" />
-            </svg>
-            <div className="absolute inset-0 flex items-center justify-center">
-              <span className="text-2xl opacity-80">🌍</span>
+          {/* Transparent — layout starfield shows through */}
+          <div className="absolute bottom-12 left-1/2 -translate-x-1/2 flex flex-col items-center gap-3">
+            <div className="text-[11px] font-mono tracking-[0.2em] text-white/50 uppercase animate-pulse">
+              {loadingPhase}
+            </div>
+            <div className="w-48 h-[1px] bg-white/10 overflow-hidden rounded-full">
+              <div className="h-full bg-white/40 rounded-full animate-[shimmer_1.5s_ease-in-out_infinite]"
+                   style={{ width: '40%' }} />
             </div>
           </div>
-          <h1 className="text-3xl font-bold tracking-[0.2em] text-transparent bg-clip-text bg-gradient-to-r from-[#00d4ff] to-[#e066ff] mb-4">
-            PROJECT ZENITH
-          </h1>
-          <div className="text-sm font-mono text-[#00d4ff] animate-pulse">
-            {loadingPhase}
-          </div>
+          <style dangerouslySetInnerHTML={{ __html: `
+            @keyframes shimmer {
+              0% { transform: translateX(-100%); }
+              100% { transform: translateX(350%); }
+            }
+          `}} />
         </div>
       )}
 
@@ -403,6 +384,7 @@ export default function Home() {
           <Info size={20} />
         </button>
       </div>
+
     </main>
   );
 }

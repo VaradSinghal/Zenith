@@ -21,7 +21,6 @@ export default function LandingPage() {
   const [tleCount, setTleCount] = useState<number | null>(null);
   const [utcTime, setUtcTime] = useState<string>('');
   const [warping, setWarping] = useState(false);
-  const [warpPhase, setWarpPhase] = useState(0);
 
   // Stats Fetching & Clock
   useEffect(() => {
@@ -95,19 +94,31 @@ export default function LandingPage() {
       mouse.current.x += (mouse.current.targetX - mouse.current.x) * 0.04;
       mouse.current.y += (mouse.current.targetY - mouse.current.y) * 0.04;
 
+      // Only render this overlay canvas when warping
+      if (!isWarpingRef.current) {
+        ctx.clearRect(0, 0, width, height);
+        animationFrameId = requestAnimationFrame(render);
+        return;
+      }
+
       ctx.clearRect(0, 0, width, height);
 
       stars.forEach(s => {
-        let ox = 0, oy = 0;
-        if (s.layer === 'B') { ox = mouse.current.x * width * -0.003; oy = mouse.current.y * height * -0.003; }
-        if (s.layer === 'C') { ox = mouse.current.x * width * -0.008; oy = mouse.current.y * height * -0.008; }
+        // If already offscreen, skip — don't respawn
+        if (s.x < -50 || s.x > width + 50 || s.y < -50 || s.y > height + 50) return;
 
-        const opacity = s.baseOpacity + Math.sin(t * s.twinkleSpeed + s.twinklePhase) * (s.baseOpacity * 0.4);
-        
+        const dx = s.x - width / 2;
+        const dy = s.y - height / 2;
+        s.x += dx * 0.018;
+        s.y += dy * 0.018;
+
+        const streakLen = 0.35;
         ctx.beginPath();
-        ctx.arc(s.x + ox, s.y + oy, s.radius, 0, Math.PI * 2);
-        ctx.fillStyle = `rgba(${s.color}, ${Math.max(0, opacity)})`;
-        ctx.fill();
+        ctx.moveTo(s.x - dx * streakLen, s.y - dy * streakLen);
+        ctx.lineTo(s.x, s.y);
+        ctx.strokeStyle = `rgba(${s.color}, 0.9)`;
+        ctx.lineWidth = s.radius * 2;
+        ctx.stroke();
       });
 
       animationFrameId = requestAnimationFrame(render);
@@ -353,9 +364,8 @@ export default function LandingPage() {
     setWarping(true);
     isWarpingRef.current = true;
 
-    setTimeout(() => setWarpPhase(1), 500);
-    setTimeout(() => setWarpPhase(2), 900);
-    setTimeout(() => router.push('/app'), 1200);
+    // Navigate after warp animation plays out
+    setTimeout(() => router.push('/app'), 1800);
   };
 
   return (
@@ -405,48 +415,14 @@ export default function LandingPage() {
           border: 1px solid rgba(255, 255, 255, 0.1);
         }
 
-        @keyframes streak { from { width: 0; opacity: 0.9; } to { width: 35vw; opacity: 0; } }
-        
         .earth-mask {
           -webkit-mask-image: linear-gradient(to top, transparent 0%, black 15%);
           mask-image: linear-gradient(to top, transparent 0%, black 15%);
         }
-
-        @keyframes veil-contract {
-          0% { background-size: 100% 100%; opacity: 1; }
-          100% { background-size: 0% 0%; opacity: 1; }
-        }
-        #warp-veil {
-          background: radial-gradient(ellipse at 50% 50%, transparent 20%, #0c0c0b 100%);
-          background-position: center; background-repeat: no-repeat;
-          animation: veil-contract 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
-        }
       `}} />
 
-      {/* LAYER 1: Star Field (Fixed Background) */}
-      <canvas ref={starCanvasRef} className="fixed inset-0 z-0 pointer-events-none" />
-
-      {/* Warp Sequences */}
-      {warpPhase >= 1 && (
-        <div id="warp-veil" className="fixed inset-0 z-[500] pointer-events-none" />
-      )}
-      
-      {warpPhase >= 1 && Array.from({ length: 20 }).map((_, i) => (
-        <div key={i} style={{
-          position: 'fixed',
-          height: '1px',
-          background: 'linear-gradient(to left, rgba(255,255,255,0.8), transparent)',
-          top: `${5 + Math.random() * 90}vh`,
-          right: `${Math.random() * 15}vw`,
-          animation: 'streak 0.28s linear forwards',
-          animationDelay: `${Math.random() * 150}ms`,
-          zIndex: 501
-        }} />
-      ))}
-
-      {warpPhase >= 2 && (
-        <div className="fixed inset-0 bg-[#0c0c0b] z-[600] pointer-events-none" style={{ animation: 'simpleFade 0.25s ease forwards', opacity: 0 }} />
-      )}
+      {/* Warp Streak Overlay (only visible during warp) */}
+      <canvas ref={starCanvasRef} className="fixed inset-0 z-[2] pointer-events-none" />
 
       {/* LAYER 3: HTML Overlay */}
       <div className={`relative z-10 w-full transition-opacity duration-500 ${warping ? 'opacity-0' : 'opacity-100'}`}>
