@@ -155,14 +155,14 @@ export default function InfoPanel({
                     setBriefing(text);
                   }
                 }
-              } catch (e) {
+              } catch {
                 // ignore parse errors for partial chunks
               }
             }
           }
         }
       }
-    } catch (e) {
+    } catch {
       setBriefingError("Network error while generating briefing.");
     } finally {
       setIsGenerating(false);
@@ -204,7 +204,8 @@ export default function InfoPanel({
       };
 
       if (typeof window !== "undefined" && "requestIdleCallback" in window) {
-        (window as any).requestIdleCallback(compute);
+        const win = window as Window & { requestIdleCallback: (cb: () => void) => number };
+        win.requestIdleCallback(compute);
       } else {
         setTimeout(compute, 0);
       }
@@ -213,6 +214,7 @@ export default function InfoPanel({
       setPasses([]);
       setNextPass(null);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedObj?.name, lat, lon]);
 
   useEffect(() => {
@@ -222,12 +224,14 @@ export default function InfoPanel({
           setNextPass(computeNextPass(selectedObj.satrec, { lat, lon }, new Date(nowTime)));
         };
         if (typeof window !== "undefined" && "requestIdleCallback" in window) {
-          (window as any).requestIdleCallback(compute);
+          const win = window as Window & { requestIdleCallback: (cb: () => void) => number };
+          win.requestIdleCallback(compute);
         } else {
           setTimeout(compute, 0);
         }
       }
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [nowTime, nextPass, selectedObj?.name, lat, lon]);
 
   let setEstimate = "";
@@ -488,7 +492,7 @@ export default function InfoPanel({
             onClick={() => fetchBriefing(false)}
             className="w-full py-2.5 rounded-lg border border-[#00d4ff]/40 bg-[#00d4ff]/10 text-[#00d4ff] hover:bg-[#00d4ff]/20 transition-colors font-bold text-sm tracking-wider uppercase flex items-center justify-center gap-2 shadow-[0_0_12px_rgba(0,212,255,0.2)]"
           >
-            <span>🌟</span> Tonight's Briefing
+            <span>🌟</span> Tonight&apos;s Briefing
           </button>
         ) : (
           <div className="relative bg-[#0c1225] border border-[#00d4ff]/30 rounded-lg p-4 shadow-[0_0_15px_rgba(0,212,255,0.1)]">

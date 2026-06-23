@@ -13,7 +13,7 @@ export async function GET() {
     }
 
     const data = await response.json();
-    const issCrew = data.people ? data.people.filter((p: any) => p.craft === "ISS") : [];
+    const issCrew = data.people ? data.people.filter((p: { craft: string; name: string }) => p.craft === "ISS") : [];
     return NextResponse.json({ crew: issCrew });
   } catch (error) {
     console.error("Astros fetch error:", error);

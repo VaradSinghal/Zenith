@@ -12,8 +12,10 @@ export async function POST(req: Request) {
     const body = await req.json();
     const { observer, overhead, planets, date, issNextPass } = body;
 
-    const topSats = overhead.slice(0, 5).map((s: any) => `${s.name} (Az: ${s.az.toFixed(0)}°, El: ${s.el.toFixed(0)}°)`).join(', ');
-    const visPlanets = planets.filter((p: any) => p.el > 0).map((p: any) => `${p.name} (Az: ${p.az.toFixed(0)}°, El: ${p.el.toFixed(0)}°, Mag: ${p.mag.toFixed(1)})`).join(', ');
+    interface SatData { name: string; az: number; el: number; }
+    interface PlanetData { name: string; az: number; el: number; mag: number; }
+    const topSats = overhead.slice(0, 5).map((s: SatData) => `${s.name} (Az: ${s.az.toFixed(0)}°, El: ${s.el.toFixed(0)}°)`).join(', ');
+    const visPlanets = planets.filter((p: PlanetData) => p.el > 0).map((p: PlanetData) => `${p.name} (Az: ${p.az.toFixed(0)}°, El: ${p.el.toFixed(0)}°, Mag: ${p.mag.toFixed(1)})`).join(', ');
     
     let issStatus = "Not currently overhead.";
     if (issNextPass) {
