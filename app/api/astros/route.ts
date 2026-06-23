@@ -1,9 +1,10 @@
 import { NextResponse } from "next/server";
 
+export const dynamic = "force-dynamic";
+
 export async function GET() {
   try {
     const response = await fetch("http://api.open-notify.org/astros.json", {
-      cache: "force-cache",
       next: { revalidate: 3600 }, // Cache for 1 hour
     });
     
