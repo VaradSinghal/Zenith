@@ -1,7 +1,8 @@
 "use client";
 
 import { useRef, useEffect, useCallback, useState } from "react";
-import type { OverheadObject, SatType } from "@/lib/propagate";
+import type { OverheadObject, SatType, ObserverLocation, SkyPathPoint } from "@/lib/propagate";
+import { computeSkyPath } from "@/lib/propagate";
 import type { PlanetObject } from "@/lib/planets";
 
 /* ── Types ─────────────────────────────────────────────────────────── */
@@ -27,6 +28,7 @@ export interface SkyDomeProps {
   filters: Filters;
   selectedObj?: OverheadObject | PlanetObject;
   auroraPole?: "N" | "S" | null;
+  observer: ObserverLocation;
   onObjectSelect: (obj: OverheadObject | PlanetObject) => void;
 }
 
@@ -52,6 +54,13 @@ const TIER_SIZE: Record<string, number> = {
 };
 
 const FONT = '"Courier New", monospace';
+
+function hexToRgb(hex: string): string {
+  const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+  return result
+    ? `${parseInt(result[1], 16)}, ${parseInt(result[2], 16)}, ${parseInt(result[3], 16)}`
+    : "255, 255, 255";
+}
 
 /* ── Seeded PRNG for reproducible background stars ─────────────────── */
 
@@ -89,6 +98,7 @@ export default function SkyDome({
   filters,
   selectedObj,
   auroraPole,
+  observer,
   onObjectSelect,
 }: SkyDomeProps) {
   const wrapperRef = useRef<HTMLDivElement>(null);
@@ -101,6 +111,34 @@ export default function SkyDome({
     x: number;
     y: number;
   } | null>(null);
+
+  const [futurePath, setFuturePath] = useState<SkyPathPoint[]>([]);
+  const [pastPath, setPastPath] = useState<SkyPathPoint[]>([]);
+
+  /* ── Compute Sky Path ────────────────────────────────────────────── */
+  useEffect(() => {
+    if (!selectedObj || !("satrec" in selectedObj)) {
+      setFuturePath([]);
+      setPastPath([]);
+      return;
+    }
+
+    const satrec = selectedObj.satrec;
+
+    function updatePaths() {
+      const now = new Date();
+      // Future path: 20 steps of 30s = 10 mins
+      const fut = computeSkyPath(satrec, observer, now, 30, 21);
+      // Past trail: 6 steps of 5s = 30 seconds
+      const pst = computeSkyPath(satrec, observer, now, -5, 7);
+      setFuturePath(fut);
+      setPastPath(pst);
+    }
+
+    updatePaths();
+    const interval = setInterval(updatePaths, 10000);
+    return () => clearInterval(interval);
+  }, [selectedObj, observer]);
 
   /* ── Generate background stars once ─────────────────────────────── */
   const bgStarsRef = useRef<{ az: number; el: number; brightness: number }[]>(
@@ -286,6 +324,72 @@ export default function SkyDome({
         }
       }
 
+      /* 6.5. Sky paths for selected satellite */
+      if (selectedObj && "satrec" in selectedObj) {
+        const satType = selectedObj.type;
+        const isISS = satType === "iss";
+        const baseColorStr = isISS ? "57, 255, 110" : hexToRgb(SAT_COLORS[satType] ?? SAT_COLORS.other);
+
+        // Future Path
+        if (futurePath.length > 1) {
+          ctx.setLineDash([4, 4]);
+          ctx.lineWidth = 1.5;
+          
+          for (let i = 0; i < futurePath.length - 1; i++) {
+            const p1 = futurePath[i];
+            const p2 = futurePath[i+1];
+            const op1 = 0.7 - (0.6 * (i / (futurePath.length - 1)));
+            
+            const xy1 = project(p1.az, p1.el, cx, cy, R);
+            const xy2 = project(p2.az, p2.el, cx, cy, R);
+            
+            ctx.beginPath();
+            ctx.moveTo(xy1.x, xy1.y);
+            ctx.lineTo(xy2.x, xy2.y);
+            ctx.strokeStyle = `rgba(${baseColorStr}, ${op1})`;
+            ctx.stroke();
+            
+            // Tick marks for ISS every 60s (every 2 steps)
+            if (isISS && (i + 1) % 2 === 0) {
+              ctx.beginPath();
+              ctx.arc(xy2.x, xy2.y, 1.5, 0, Math.PI * 2);
+              ctx.fillStyle = `rgba(57, 255, 110, ${op1 + 0.2})`;
+              ctx.fill();
+            }
+          }
+          ctx.setLineDash([]);
+          
+          // Label T+10m at the end for ISS
+          if (isISS && futurePath.length > 0) {
+            const last = futurePath[futurePath.length - 1];
+            const xy = project(last.az, last.el, cx, cy, R);
+            ctx.fillStyle = `rgba(57, 255, 110, 0.8)`;
+            ctx.font = `8px ${FONT}`;
+            ctx.textAlign = "center";
+            ctx.fillText("T+10m", xy.x, xy.y - 4);
+          }
+        }
+        
+        // Past Trail
+        if (pastPath.length > 1) {
+          for (let i = 0; i < pastPath.length - 1; i++) {
+            const p1 = pastPath[i];
+            const p2 = pastPath[i+1];
+            const op = 0.8 - (0.8 * (i / (pastPath.length - 1)));
+            
+            const xy1 = project(p1.az, p1.el, cx, cy, R);
+            const xy2 = project(p2.az, p2.el, cx, cy, R);
+            
+            ctx.beginPath();
+            ctx.moveTo(xy1.x, xy1.y);
+            ctx.lineTo(xy2.x, xy2.y);
+            ctx.strokeStyle = `rgba(${baseColorStr}, ${op})`;
+            ctx.lineWidth = i < 2 ? 2 : 1;
+            ctx.stroke();
+          }
+        }
+      }
+
       /* 7. Satellites */
       if (filters.showSatellites) {
         const tierOrder: Record<string, number> = {
@@ -428,7 +532,7 @@ export default function SkyDome({
 
       hittableRef.current = hittable;
     },
-    [overhead, planets, constLines, filters, selectedObj, auroraPole]
+    [overhead, planets, constLines, filters, selectedObj, auroraPole, futurePath, pastPath]
   );
 
   /* ── Animation loop at ~10fps for ISS pulse ─────────────────────── */

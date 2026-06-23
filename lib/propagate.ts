@@ -66,6 +66,12 @@ export interface PassDetails {
   durationMin: number;
 }
 
+export interface SkyPathPoint {
+  az: number;
+  el: number;
+  t: Date;
+}
+
 export function parseTLEBlock(tleText: string): SatelliteRecord[] {
   const lines = tleText.trim().split('\n').map(l => l.trim()).filter(l => l.length > 0);
   const records: SatelliteRecord[] = [];
@@ -316,4 +322,62 @@ export function predictPasses(
   }
   
   return passes;
+}
+
+export function computeSkyPath(
+  satrec: satellite.SatRec,
+  observer: ObserverLocation,
+  startDate: Date,
+  stepSeconds: number,
+  stepCount: number
+): SkyPathPoint[] {
+  const path: SkyPathPoint[] = [];
+  const observerGd = {
+    longitude: observer.lon * (Math.PI / 180),
+    latitude: observer.lat * (Math.PI / 180),
+    height: observer.altKm || 0
+  };
+  const obsEcf = satellite.geodeticToEcf(observerGd);
+  
+  const latRad = observerGd.latitude;
+  const lonRad = observerGd.longitude;
+  const sinLat = Math.sin(latRad);
+  const cosLat = Math.cos(latRad);
+  const sinLon = Math.sin(lonRad);
+  const cosLon = Math.cos(lonRad);
+
+  for (let i = 0; i < stepCount; i++) {
+    const t = new Date(startDate.getTime() + i * stepSeconds * 1000);
+    const gmst = satellite.gstime(t);
+    const pv = satellite.propagate(satrec, t);
+    
+    if (!pv || !pv.position || typeof pv.position === 'boolean') {
+      continue;
+    }
+    
+    const posEci = pv.position as satellite.EciVec3<number>;
+    const posEcf = satellite.eciToEcf(posEci, gmst);
+    
+    const rx = posEcf.x - obsEcf.x;
+    const ry = posEcf.y - obsEcf.y;
+    const rz = posEcf.z - obsEcf.z;
+    const rangeKm = Math.sqrt(rx * rx + ry * ry + rz * rz);
+    
+    const topS = sinLat * cosLon * rx + sinLat * sinLon * ry - cosLat * rz;
+    const topE = -sinLon * rx + cosLon * ry;
+    const topZ = cosLat * cosLon * rx + cosLat * sinLon * ry + sinLat * rz;
+    
+    const elRad = Math.asin(topZ / rangeKm);
+    const elDeg = elRad * (180 / Math.PI);
+    
+    if (elDeg <= 0) continue;
+    
+    let azRad = Math.atan2(topE, -topS);
+    if (azRad < 0) azRad += 2 * Math.PI;
+    const azDeg = azRad * (180 / Math.PI);
+    
+    path.push({ az: azDeg, el: elDeg, t });
+  }
+  
+  return path;
 }

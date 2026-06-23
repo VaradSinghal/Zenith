@@ -256,6 +256,7 @@ export default function Home() {
               filters={filters}
               selectedObj={selectedObj || undefined}
               auroraPole={auroraPole}
+              observer={observer}
               onObjectSelect={(obj) => {
                 setSelectedObj(obj);
                 if (window.innerWidth < 768) setActiveTab("info");
