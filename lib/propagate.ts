@@ -20,6 +20,13 @@ export type OverheadObject = {
   lonDeg: number;
 };
 
+export interface PassDetails {
+  riseTime: Date;
+  setTime: Date;
+  maxEl: number;
+  durationMin: number;
+}
+
 export function parseTLEBlock(tleText: string): SatelliteRecord[] {
   const lines = tleText.trim().split('\n').map(l => l.trim()).filter(l => l.length > 0);
   const records: SatelliteRecord[] = [];
@@ -191,4 +198,83 @@ export function estimateSet(obj: OverheadObject, observer: ObserverLocation): st
   }
   
   return "Overhead > 10 min";
+}
+
+export function predictPasses(
+  satrec: satellite.SatRec,
+  observer: ObserverLocation,
+  startDate: Date,
+  maxPasses = 5
+): PassDetails[] {
+  const passes: PassDetails[] = [];
+  let isUp = false;
+  let currentPass: Partial<PassDetails> | null = null;
+  
+  const stepMs = 60 * 1000; // 1 min steps
+  const maxSteps = 3 * 24 * 60; // Up to 3 days to find passes
+  
+  const observerGd = {
+    longitude: observer.lon * (Math.PI / 180),
+    latitude: observer.lat * (Math.PI / 180),
+    height: observer.altKm || 0
+  };
+  const obsEcf = satellite.geodeticToEcf(observerGd);
+
+  const latRad = observerGd.latitude;
+  const lonRad = observerGd.longitude;
+  const sinLat = Math.sin(latRad);
+  const cosLat = Math.cos(latRad);
+  const sinLon = Math.sin(lonRad);
+  const cosLon = Math.cos(lonRad);
+
+  for (let i = 0; i < maxSteps; i++) {
+    const t = new Date(startDate.getTime() + i * stepMs);
+    const pv = satellite.propagate(satrec, t);
+    
+    if (!pv || !pv.position || typeof pv.position === 'boolean') {
+      continue;
+    }
+    
+    const posEci = pv.position as satellite.EciVec3<number>;
+    const gmst = satellite.gstime(t);
+    const posEcf = satellite.eciToEcf(posEci, gmst);
+    
+    const rx = posEcf.x - obsEcf.x;
+    const ry = posEcf.y - obsEcf.y;
+    const rz = posEcf.z - obsEcf.z;
+    const rangeKm = Math.sqrt(rx * rx + ry * ry + rz * rz);
+    
+    const topZ = cosLat * cosLon * rx + cosLat * sinLon * ry + sinLat * rz;
+    const elRad = Math.asin(topZ / rangeKm);
+    const elDeg = elRad * (180 / Math.PI);
+    
+    if (elDeg > 0) {
+      if (!isUp) {
+        // Rise
+        isUp = true;
+        currentPass = { riseTime: t, maxEl: elDeg };
+      } else if (currentPass) {
+        // Update maxEl
+        if (elDeg > currentPass.maxEl!) {
+          currentPass.maxEl = elDeg;
+        }
+      }
+    } else {
+      if (isUp) {
+        // Set
+        isUp = false;
+        if (currentPass && currentPass.riseTime) {
+          currentPass.setTime = t;
+          currentPass.durationMin = (t.getTime() - currentPass.riseTime.getTime()) / 60000;
+          passes.push(currentPass as PassDetails);
+          if (passes.length >= maxPasses) {
+            break;
+          }
+        }
+        currentPass = null;
+      }
+    }
+  }
+  
+  return passes;
 }

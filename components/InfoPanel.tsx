@@ -1,9 +1,9 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import type { OverheadObject } from "@/lib/propagate";
+import type { OverheadObject, PassDetails } from "@/lib/propagate";
 import type { PlanetObject } from "@/lib/planets";
-import { estimateSet } from "@/lib/propagate";
+import { estimateSet, predictPasses } from "@/lib/propagate";
 
 export interface InfoPanelProps {
   selectedObj: OverheadObject | PlanetObject | null;
@@ -34,6 +34,7 @@ export default function InfoPanel({
   lon,
 }: InfoPanelProps) {
   const [issCrew, setIssCrew] = useState<number | null>(null);
+  const [passes, setPasses] = useState<PassDetails[]>([]);
 
   useEffect(() => {
     fetch("/api/astros")
@@ -51,8 +52,16 @@ export default function InfoPanel({
 
   // Is it a satellite?
   const isSat = selectedObj && "satrec" in selectedObj;
-  
 
+  useEffect(() => {
+    if (selectedObj && "satrec" in selectedObj) {
+      const observerLoc = { lat, lon };
+      const upcoming = predictPasses(selectedObj.satrec, observerLoc, new Date(), 5);
+      setPasses(upcoming);
+    } else {
+      setPasses([]);
+    }
+  }, [selectedObj, lat, lon]);
 
   let setEstimate = "";
   if (isSat) {
@@ -189,6 +198,40 @@ export default function InfoPanel({
                 </div>
               )}
             </div>
+
+            {/* Pass Prediction Timeline */}
+            {passes.length > 0 && (
+              <div className="mt-4 border-t border-[#1a2744] pt-4">
+                <h3 className="text-[10px] font-bold text-gray-500 uppercase tracking-widest mb-3">
+                  Upcoming Passes (Next 3 Days)
+                </h3>
+                <div className="relative border-l border-[#1a2744] ml-2 pl-4 flex flex-col gap-3">
+                  {passes.map((p, i) => (
+                    <div key={i} className="relative flex items-center justify-between">
+                      {/* Timeline Dot */}
+                      <div className="absolute -left-[21px] top-2 w-2 h-2 rounded-full bg-[#00d4ff] shadow-[0_0_6px_#00d4ff]" />
+                      
+                      <div className="flex flex-col">
+                        <span className="font-mono text-[#ededed] text-xs">
+                          {p.riseTime.toISOString().substring(5, 16).replace("T", " ")} UTC
+                        </span>
+                        <span className="text-[10px] text-gray-400 mt-0.5">
+                          {p.durationMin.toFixed(1)}m · Max El: {p.maxEl.toFixed(0)}°
+                        </span>
+                      </div>
+                      
+                      {/* Bar Chart */}
+                      <div className="w-12 h-1.5 bg-[#1a2744] rounded-full overflow-hidden flex items-end">
+                        <div 
+                          className="h-full bg-gradient-to-r from-[#00d4ff] to-[#e066ff]" 
+                          style={{ width: `${Math.min((p.maxEl / 90) * 100, 100)}%` }}
+                        />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         )}
       </div>
