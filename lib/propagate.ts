@@ -66,6 +66,14 @@ export interface PassDetails {
   durationMin: number;
 }
 
+export interface NextPassInfo {
+  aosDate: Date;
+  losDate: Date;
+  maxEl: number;
+  duration: number; // minutes
+  isOverheadNow: boolean;
+}
+
 export interface SkyPathPoint {
   az: number;
   el: number;
@@ -380,4 +388,70 @@ export function computeSkyPath(
   }
   
   return path;
+}
+
+export function computeNextPass(
+  satrec: satellite.SatRec,
+  observer: ObserverLocation,
+  fromDate: Date
+): NextPassInfo | null {
+  const stepMs = 60 * 1000;
+  const maxSteps = 24 * 60; // 24 hours
+  
+  let isUp = false;
+  let maxEl = 0;
+  let aosDate: Date | null = null;
+  let isOverheadNow = false;
+  
+  const observerGd = {
+    longitude: observer.lon * (Math.PI / 180),
+    latitude: observer.lat * (Math.PI / 180),
+    height: observer.altKm || 0
+  };
+  const obsEcf = satellite.geodeticToEcf(observerGd);
+  
+  const latRad = observerGd.latitude;
+  const lonRad = observerGd.longitude;
+  const sinLat = Math.sin(latRad);
+  const cosLat = Math.cos(latRad);
+  const sinLon = Math.sin(lonRad);
+  const cosLon = Math.cos(lonRad);
+
+  for (let i = 0; i < maxSteps; i++) {
+    const t = new Date(fromDate.getTime() + i * stepMs);
+    const pv = satellite.propagate(satrec, t);
+    if (!pv || !pv.position || typeof pv.position === 'boolean') continue;
+    
+    const posEci = pv.position as satellite.EciVec3<number>;
+    const gmst = satellite.gstime(t);
+    const posEcf = satellite.eciToEcf(posEci, gmst);
+    
+    const rx = posEcf.x - obsEcf.x;
+    const ry = posEcf.y - obsEcf.y;
+    const rz = posEcf.z - obsEcf.z;
+    const rangeKm = Math.sqrt(rx * rx + ry * ry + rz * rz);
+    
+    const topZ = cosLat * cosLon * rx + cosLat * sinLon * ry + sinLat * rz;
+    const elDeg = Math.asin(topZ / rangeKm) * (180 / Math.PI);
+    
+    if (elDeg > 0) {
+      if (!isUp) {
+        isUp = true;
+        aosDate = t;
+        maxEl = elDeg;
+        if (i === 0) isOverheadNow = true;
+      } else {
+        if (elDeg > maxEl) maxEl = elDeg;
+      }
+    } else {
+      if (isUp) {
+        // Just crossed back down to negative -> LOS
+        const losDate = t;
+        const duration = (losDate.getTime() - aosDate!.getTime()) / 60000;
+        return { aosDate: aosDate!, losDate, maxEl, duration, isOverheadNow };
+      }
+    }
+  }
+  
+  return null;
 }

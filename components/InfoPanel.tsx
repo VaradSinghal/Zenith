@@ -1,9 +1,9 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import type { OverheadObject, PassDetails } from "@/lib/propagate";
+import type { OverheadObject, PassDetails, NextPassInfo } from "@/lib/propagate";
 import type { PlanetObject } from "@/lib/planets";
-import { estimateSet, predictPasses } from "@/lib/propagate";
+import { estimateSet, predictPasses, computeNextPass } from "@/lib/propagate";
 
 export interface InfoPanelProps {
   selectedObj: OverheadObject | PlanetObject | null;
@@ -53,6 +53,17 @@ export interface AstroMember {
   craft: string;
 }
 
+function formatDuration(ms: number) {
+  if (ms < 0) ms = 0;
+  const totalSecs = Math.floor(ms / 1000);
+  const h = Math.floor(totalSecs / 3600);
+  const m = Math.floor((totalSecs % 3600) / 60);
+  const s = totalSecs % 60;
+  
+  if (h > 0) return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+  return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+}
+
 export default function InfoPanel({
   selectedObj,
   overheadList,
@@ -63,6 +74,13 @@ export default function InfoPanel({
   const [issCrewList, setIssCrewList] = useState<AstroMember[]>([]);
   const [isCrewExpanded, setIsCrewExpanded] = useState(true);
   const [passes, setPasses] = useState<PassDetails[]>([]);
+  const [nextPass, setNextPass] = useState<NextPassInfo | null>(null);
+  const [nowTime, setNowTime] = useState<number>(Date.now());
+
+  useEffect(() => {
+    const int = setInterval(() => setNowTime(Date.now()), 1000);
+    return () => clearInterval(int);
+  }, []);
 
   useEffect(() => {
     if (selectedObj?.type === "iss") {
@@ -85,10 +103,40 @@ export default function InfoPanel({
       const observerLoc = { lat, lon };
       const upcoming = predictPasses(selectedObj.satrec, observerLoc, new Date(), 5);
       setPasses(upcoming);
+      
+      let active = true;
+      const compute = () => {
+        if (!active) return;
+        const info = computeNextPass(selectedObj.satrec, observerLoc, new Date(nowTime));
+        if (active) setNextPass(info);
+      };
+
+      if (typeof window !== "undefined" && "requestIdleCallback" in window) {
+        (window as any).requestIdleCallback(compute);
+      } else {
+        setTimeout(compute, 0);
+      }
+      return () => { active = false; };
     } else {
       setPasses([]);
+      setNextPass(null);
     }
-  }, [selectedObj, lat, lon]);
+  }, [selectedObj?.name, lat, lon]);
+
+  useEffect(() => {
+    if (nextPass && nowTime > nextPass.losDate.getTime()) {
+      if (selectedObj && "satrec" in selectedObj) {
+        const compute = () => {
+          setNextPass(computeNextPass(selectedObj.satrec, { lat, lon }, new Date(nowTime)));
+        };
+        if (typeof window !== "undefined" && "requestIdleCallback" in window) {
+          (window as any).requestIdleCallback(compute);
+        } else {
+          setTimeout(compute, 0);
+        }
+      }
+    }
+  }, [nowTime, nextPass, selectedObj?.name, lat, lon]);
 
   let setEstimate = "";
   if (isSat) {
@@ -209,6 +257,39 @@ export default function InfoPanel({
                 </div>
               )}
             </div>
+
+            {/* Live Countdown Centrepiece */}
+            {isSat && nextPass && (
+              <div className="mt-4 bg-[#0c1225] border border-[#1a2744] rounded-lg p-4 flex flex-col items-center justify-center text-center shadow-[inset_0_0_20px_rgba(0,0,0,0.5)]">
+                {nextPass.isOverheadNow && nowTime < nextPass.losDate.getTime() ? (
+                  <>
+                    <div className="flex items-center gap-2 mb-2">
+                      <div className="w-2.5 h-2.5 rounded-full bg-[#00ff88] animate-pulse shadow-[0_0_8px_#00ff88]" />
+                      <span className="text-[#00ff88] font-bold text-[11px] tracking-widest uppercase">Overhead Now</span>
+                    </div>
+                    <div className="text-xs text-gray-400 uppercase tracking-widest mb-1">
+                      Sets in
+                    </div>
+                    <div className="text-[20px] font-mono font-bold text-[#00d4ff] tracking-[0.1em] drop-shadow-[0_0_8px_rgba(0,212,255,0.4)]" style={{ fontFamily: '"Courier New", monospace' }}>
+                      -{formatDuration(nextPass.losDate.getTime() - nowTime)}
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <div className="text-gray-400 font-bold text-[11px] tracking-widest uppercase mb-2">
+                      Next Pass In
+                    </div>
+                    <div className="text-[20px] font-mono font-bold text-[#00d4ff] tracking-[0.1em] drop-shadow-[0_0_8px_rgba(0,212,255,0.4)]" style={{ fontFamily: '"Courier New", monospace' }}>
+                      {formatDuration(nextPass.aosDate.getTime() - nowTime)}
+                    </div>
+                    <div className="flex items-center gap-4 text-[10px] text-gray-500 uppercase tracking-widest mt-2">
+                      <span>Max El: {nextPass.maxEl.toFixed(0)}°</span>
+                      <span>Duration: ~{nextPass.duration.toFixed(0)}m</span>
+                    </div>
+                  </>
+                )}
+              </div>
+            )}
 
             {/* Additional Info row */}
             <div className="mt-4 flex flex-col gap-2">
