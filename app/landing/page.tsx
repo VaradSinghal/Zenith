@@ -11,7 +11,7 @@ const spaceMono = Space_Mono({ subsets: ["latin"], weight: ["400"] });
 
 export default function LandingPage() {
   const router = useRouter();
-  
+
   const starCanvasRef = useRef<HTMLCanvasElement>(null);
   const threeContainerRef = useRef<HTMLDivElement>(null);
   const spokesCanvasRef = useRef<HTMLCanvasElement>(null);
@@ -67,8 +67,8 @@ export default function LandingPage() {
       '200, 200, 200', // grey
     ];
 
-    const addStars = (count: number, rMin: number, rMax: number, oMin: number, oMax: number, layer: 'A'|'B'|'C') => {
-      for(let i=0; i<count; i++) {
+    const addStars = (count: number, rMin: number, rMax: number, oMin: number, oMax: number, layer: 'A' | 'B' | 'C') => {
+      for (let i = 0; i < count; i++) {
         stars.push({
           x: Math.random() * width,
           y: Math.random() * height,
@@ -89,7 +89,7 @@ export default function LandingPage() {
     let animationFrameId: number;
 
     const render = () => {
-      
+
       mouse.current.x += (mouse.current.targetX - mouse.current.x) * 0.04;
       mouse.current.y += (mouse.current.targetY - mouse.current.y) * 0.04;
 
@@ -210,7 +210,7 @@ export default function LandingPage() {
 
     // Lights
     scene.add(new THREE.AmbientLight(0xffffff, 0.05));
-    
+
     const dirLight1 = new THREE.DirectionalLight(0xffffff, 1.2);
     dirLight1.position.set(-8, 4, 6);
     scene.add(dirLight1);
@@ -221,10 +221,10 @@ export default function LandingPage() {
 
     let animationFrameId: number;
     let currentOpacity = 1.0;
-    
+
     const render = () => {
       animationFrameId = requestAnimationFrame(render);
-      
+
       if (isWarpingRef.current) {
         camera.position.z -= (camera.position.z - 0) * 0.07;
         earthMesh.rotation.y += 0.006;
@@ -235,7 +235,7 @@ export default function LandingPage() {
         earthMesh.rotation.y += 0.001;
         cloudMesh.rotation.y += 0.0012;
       }
-      
+
       renderer.render(scene, camera);
     };
     render();
@@ -307,7 +307,7 @@ export default function LandingPage() {
     const render = () => {
       ctx.clearRect(0, 0, width, height);
       rotation += 0.0005; // very slow global rotation
-      
+
       const cx = width / 2;
       const cy = height / 2;
 
@@ -316,7 +316,7 @@ export default function LandingPage() {
       ctx.rotate(rotation);
 
       ctx.lineWidth = 0.5;
-      
+
       spokes.forEach(spoke => {
         spoke.angle += spoke.speed;
         const x = Math.cos(spoke.angle) * spoke.length;
@@ -335,7 +335,7 @@ export default function LandingPage() {
         // Draw node
         if (spoke.hasNode) {
           ctx.fillStyle = `rgba(255, 255, 255, ${spoke.opacity})`;
-          ctx.fillRect(x - spoke.size/2, y - spoke.size/2, spoke.size, spoke.size);
+          ctx.fillRect(x - spoke.size / 2, y - spoke.size / 2, spoke.size, spoke.size);
         }
       });
 
@@ -364,12 +364,13 @@ export default function LandingPage() {
     isWarpingRef.current = true;
 
     // Navigate after warp animation plays out
-    setTimeout(() => router.push('/app'), 1800);
+    setTimeout(() => router.push('/observatory'), 1800);
   };
 
   return (
     <div className="relative w-full min-h-[200vh] bg-[#0c0c0b] text-[#ffffff] selection:bg-white selection:text-black">
-      <style dangerouslySetInnerHTML={{__html: `
+      <style dangerouslySetInnerHTML={{
+        __html: `
         html, body { margin: 0; padding: 0; background: #0c0c0b; }
         
         .anim-fade-in { animation: fadeIn 1.2s cubic-bezier(0.16, 1, 0.3, 1) forwards; opacity: 0; transform: translateY(16px); }
@@ -435,32 +436,32 @@ export default function LandingPage() {
         </div>
         <div className="w-48 h-[1px] bg-white/10 overflow-hidden rounded-full">
           <div className="h-full bg-white/40 rounded-full animate-[shimmer_1.5s_ease-in-out_infinite]"
-               style={{ width: '40%' }} />
+            style={{ width: '40%' }} />
         </div>
       </div>
 
       {/* LAYER 3: HTML Overlay */}
       <div className={`relative z-10 w-full transition-opacity duration-500 ${warping ? 'opacity-0' : 'opacity-100'}`}>
-        
+
         {/* HERO SECTION */}
         <section className="relative w-full h-screen pointer-events-none overflow-hidden">
           {/* Earth Canvas inside Hero section so it scrolls away */}
           <div ref={threeContainerRef} className="absolute inset-0 z-[1] pointer-events-none earth-mask" />
-          
+
           {/* TOP LEFT */}
           <div className="absolute z-10 top-12 left-12 md:top-20 md:left-24 pointer-events-auto">
-            
+
             <div className={`${inter.className} anim-fade-in anim-delay-1 text-[10px] tracking-[0.25em] text-[#7d8187] mb-8 uppercase`}>
               AARUUSH &apos;26 &nbsp;·&nbsp; ASTRALWEB INNOVATE &nbsp;·&nbsp; ROUND 2
             </div>
-            
-            <h1 
+
+            <h1
               className={`${inter.className} anim-fade-in anim-delay-2 font-light text-white mb-6 leading-[0.95] tracking-tight`}
               style={{ fontSize: "clamp(48px, 8vw, 120px)" }}
             >
-              Project<br/>Zenith
+              Project<br />Zenith
             </h1>
-            
+
             <div className={`${inter.className} anim-fade-in anim-delay-3 text-[13px] tracking-[0.3em] text-[#ffffff] opacity-80 mb-10 uppercase`}>
               The Celestial Eye
             </div>
@@ -487,7 +488,7 @@ export default function LandingPage() {
               </span>
               <span className={`${inter.className} text-[10px] tracking-[0.2em] text-[#7d8187] uppercase`}>Satellites Tracked</span>
             </div>
-            
+
             <div className="w-[1px] h-[32px] bg-[#1f2228]" />
 
             <div className="flex flex-col gap-2">
@@ -522,7 +523,7 @@ export default function LandingPage() {
           {/* Spokes Canvas - sticky so it stays in viewport while scrolling features */}
           <div className="sticky top-0 w-full h-screen z-0 pointer-events-none">
             <canvas ref={spokesCanvasRef} className="absolute inset-0 w-full h-full" />
-            
+
             {/* Title fixed in the center of the spokes */}
             <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
               <div className="flex items-center gap-16 md:gap-32">
@@ -533,7 +534,7 @@ export default function LandingPage() {
           </div>
 
           <div className="relative z-10 max-w-6xl mx-auto space-y-32 px-6 pb-32 md:px-24 md:pb-48 -mt-[50vh]">
-            
+
             {/* Feature 1 */}
             <div className="glass-card p-12 md:p-24 w-full md:w-2/3 ml-auto">
               <div className={`${spaceMono.className} text-[#474747] text-[10px] tracking-[0.2em] uppercase mb-6`}>01 / SGP4 Propagation</div>
@@ -565,7 +566,7 @@ export default function LandingPage() {
               <p className={`${inter.className} text-[#7d8187] leading-[1.8] text-[16px] font-light max-w-2xl mx-auto mb-16`}>
                 Raw telemetry data is complex. Zenith utilizes Google Gemini 2.5 Flash to analyze current overhead traffic, planet positions, and upcoming passes to generate highly readable, human-friendly sky-watching guides for any specific observer location.
               </p>
-              
+
               <button className="glass-pill group inline-flex items-center justify-center" onClick={handleEnter}>
                 <span className={`${inter.className} relative z-10 text-[11px] tracking-[0.3em] uppercase text-white group-hover:text-black transition-colors duration-500`}>
                   Initialize Link
