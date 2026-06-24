@@ -20,7 +20,7 @@ const d2r = (d: number) => d * D2R;
 function getGAST(date: Date): number {
   const jd = date.getTime() / 86400000 + 2440587.5;
   const T  = (jd - 2451545.0) / 36525.0;
-  let   g  = 280.46061837 + 360.98564736629 * (jd - 2451545.0)
+  const g  = 280.46061837 + 360.98564736629 * (jd - 2451545.0)
             + 0.000387933 * T * T - (T * T * T) / 38710000.0;
   return ((g % 360) + 360) % 360;
 }
@@ -39,23 +39,6 @@ function eqToVec(raHours: number, decDeg: number, r: number): THREE.Vector3 {
     r * Math.sin(dec),
    -r * Math.cos(dec) * Math.sin(ra)
   );
-}
-
-/**
- * Horizon (Az °, El °) → Three.js Vector3.
- * Az=0→N, 90→E, 180→S, 270→W.
- * We use a right-handed Y-up local frame:
- *   +Z = North,  +X = East,  +Y = Up (zenith)
- */
-function azElToVec(azDeg: number, elDeg: number, r: number): THREE.Vector3 {
-  const az = d2r(azDeg);
-  const el = d2r(elDeg);
-  return new THREE.Vector3(
-     r * Math.cos(el) * Math.sin(az),   // East component → X
-     r * Math.sin(el),                   // Up component  → Y
-     r * Math.cos(el) * Math.cos(az)    // North component → Z (we'll negate below)
-  ).multiplyScalar(1).setZ(-r * Math.cos(el) * Math.cos(az));
-  // Actually just write cleanly:
 }
 
 // Clean version used everywhere:
@@ -102,7 +85,6 @@ export default function ObservatoryPage() {
 
   /* ── Data ── */
   const [tles, setTles]           = useState<SatelliteRecord[]>([]);
-  const [starsLoaded, setStarsLoaded] = useState(false);
 
   /* ── Three.js refs ── */
   const mountRef        = useRef<HTMLDivElement>(null);
@@ -122,12 +104,6 @@ export default function ObservatoryPage() {
   const atmRef          = useRef<THREE.Mesh | null>(null);
   const gridGroupRef    = useRef<THREE.Group | null>(null);
   const milkyWayRef     = useRef<THREE.Points | null>(null);
-
-  /* ── Selected object ── */
-  const [selectedObj, setSelectedObj] = useState<{
-    name: string; type: string; az: number; el: number;
-    alt?: number; vel?: number; period?: number; mag?: number;
-  } | null>(null);
 
   /* ─────────────────────────────────────────────────────────────────
      Fetch TLEs + stars once
@@ -184,7 +160,8 @@ export default function ObservatoryPage() {
      Three.js setup — runs once when phase becomes 'sky'
      ───────────────────────────────────────────────────────────────── */
   useEffect(() => {
-    if (phase !== 'sky' || !mountRef.current || !labelsRef.current) return;
+    const currentMount = mountRef.current;
+    if (phase !== 'sky' || !currentMount || !labelsRef.current) return;
 
     const W = window.innerWidth;
     const H = window.innerHeight;
@@ -195,7 +172,7 @@ export default function ObservatoryPage() {
     renderer.setSize(W, H);
     renderer.setPixelRatio(DPR);
     renderer.setClearColor(0x000005, 1);
-    mountRef.current.appendChild(renderer.domElement);
+    currentMount.appendChild(renderer.domElement);
     rendererRef.current = renderer;
 
     /* ── Scene ── */
@@ -304,7 +281,6 @@ export default function ObservatoryPage() {
         });
 
         starSphere.add(new THREE.Points(g3, starMat));
-        setStarsLoaded(true);
       })
       .catch(() => {
         // Procedural fallback if stars.json missing
@@ -327,7 +303,6 @@ export default function ObservatoryPage() {
           blending: THREE.AdditiveBlending, depthWrite: false, sizeAttenuation: false,
         });
         starSphere.add(new THREE.Points(g3, mat));
-        setStarsLoaded(true);
       });
 
     /* ════════════════════════════════════════
@@ -344,7 +319,7 @@ export default function ObservatoryPage() {
         // Convert galactic → equatorial (J2000 approx)
         // Galactic north pole: RA=192.85948°, Dec=27.12825°, l_NCP=122.93192°
         const lR = d2r(l), bR = d2r(b);
-        const poleRA = d2r(192.85948), poleDec = d2r(27.12825);
+        const poleDec = d2r(27.12825);
         const sinDec = Math.sin(bR)*Math.sin(poleDec) + Math.cos(bR)*Math.cos(poleDec)*Math.cos(d2r(122.93192)-lR);
         const dec = Math.asin(sinDec);
         const cosRA = (Math.cos(bR)*Math.sin(d2r(122.93192)-lR)) / Math.cos(dec);
@@ -489,11 +464,9 @@ export default function ObservatoryPage() {
     /* ════════════════════════════════════════
        RENDER LOOP
        ════════════════════════════════════════ */
-    let lastT = performance.now();
 
     const animate = (t: number) => {
       rafRef.current = requestAnimationFrame(animate);
-      const dt = t - lastT; lastT = t;
 
       if (playing) simTimeRef.current = Date.now() + timeOffset * 60000;
       const now  = new Date(simTimeRef.current);
@@ -662,8 +635,8 @@ export default function ObservatoryPage() {
       window.removeEventListener('resize', onResize);
       controls.dispose();
       renderer.dispose();
-      if (mountRef.current?.contains(renderer.domElement))
-        mountRef.current.removeChild(renderer.domElement);
+      if (currentMount?.contains(renderer.domElement))
+        currentMount.removeChild(renderer.domElement);
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [phase]);
