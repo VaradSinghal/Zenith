@@ -7,7 +7,7 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { getPlanetPositions } from '@/lib/planets';
 import { propagateAll, parseTLEBlock, SatelliteRecord } from '@/lib/propagate';
-import { getConstellationLines } from '@/lib/constellations';
+import { buildConstellationLines3D, ConstellationLine3D } from '@/lib/constellations-3d';
 
 const spaceMono = Space_Mono({ weight: ['400', '700'], subsets: ['latin'] });
 const spaceGrotesk = Space_Grotesk({ weight: ['300', '400', '600', '700'], subsets: ['latin'] });
@@ -19,9 +19,9 @@ const d2r = (d: number) => d * D2R;
 /** Greenwich Apparent Sidereal Time → degrees */
 function getGAST(date: Date): number {
   const jd = date.getTime() / 86400000 + 2440587.5;
-  const T  = (jd - 2451545.0) / 36525.0;
-  const g  = 280.46061837 + 360.98564736629 * (jd - 2451545.0)
-            + 0.000387933 * T * T - (T * T * T) / 38710000.0;
+  const T = (jd - 2451545.0) / 36525.0;
+  const g = 280.46061837 + 360.98564736629 * (jd - 2451545.0)
+    + 0.000387933 * T * T - (T * T * T) / 38710000.0;
   return ((g % 360) + 360) % 360;
 }
 
@@ -32,12 +32,12 @@ function getGAST(date: Date): number {
  *   RA=0h, Dec=0 points along +X at LST=0
  */
 function eqToVec(raHours: number, decDeg: number, r: number): THREE.Vector3 {
-  const ra  = d2r(raHours * 15);
+  const ra = d2r(raHours * 15);
   const dec = d2r(decDeg);
   return new THREE.Vector3(
     r * Math.cos(dec) * Math.cos(ra),
     r * Math.sin(dec),
-   -r * Math.cos(dec) * Math.sin(ra)
+    -r * Math.cos(dec) * Math.sin(ra)
   );
 }
 
@@ -48,13 +48,49 @@ function horVec(azDeg: number, elDeg: number, r: number): THREE.Vector3 {
   return new THREE.Vector3(
     r * Math.cos(el) * Math.sin(az),   // +X = East
     r * Math.sin(el),                   // +Y = Up
-   -r * Math.cos(el) * Math.cos(az)   // -Z = South → camera looks -Z by default
+    -r * Math.cos(el) * Math.cos(az)   // -Z = South → camera looks -Z by default
   );
 }
 
 /* ─── Types ──────────────────────────────────────────────────────── */
 interface NominatimResult { display_name: string; lat: string; lon: string }
-interface ObserverLoc     { name: string; lat: number; lon: number }
+interface ObserverLoc { name: string; lat: number; lon: number }
+
+/* ─── Constants hoisted out of the render loop ──────────────────────
+   These used to be declared *inside* `animate`, which meant a fresh
+   88-key object (CONST_NAMES) and a fresh 8-item array (CARDINALS) were
+   allocated 60 times a second for no reason. ──────────────────────── */
+const CONST_NAMES: Record<string, string> = {
+  'And': 'Andromeda', 'Ant': 'Antlia', 'Aps': 'Apus', 'Aqr': 'Aquarius',
+  'Aql': 'Aquila', 'Ara': 'Ara', 'Ari': 'Aries', 'Aur': 'Auriga',
+  'Boo': 'Boötes', 'Cae': 'Caelum', 'Cam': 'Camelopardalis', 'Cnc': 'Cancer',
+  'CVn': 'Canes Venatici', 'CMa': 'Canis Major', 'CMi': 'Canis Minor',
+  'Cap': 'Capricornus', 'Car': 'Carina', 'Cas': 'Cassiopeia', 'Cen': 'Centaurus',
+  'Cep': 'Cepheus', 'Cet': 'Cetus', 'Cha': 'Chamaeleon', 'Cir': 'Circinus',
+  'Col': 'Columba', 'Com': 'Coma Berenices', 'CrA': 'Corona Australis',
+  'CrB': 'Corona Borealis', 'Crv': 'Corvus', 'Crt': 'Crater', 'Cru': 'Crux',
+  'Cyg': 'Cygnus', 'Del': 'Delphinus', 'Dor': 'Dorado', 'Dra': 'Draco',
+  'Equ': 'Equuleus', 'Eri': 'Eridanus', 'For': 'Fornax', 'Gem': 'Gemini',
+  'Gru': 'Grus', 'Her': 'Hercules', 'Hor': 'Horologium', 'Hya': 'Hydra',
+  'Hyi': 'Hydrus', 'Ind': 'Indus', 'Lac': 'Lacerta', 'Leo': 'Leo',
+  'LMi': 'Leo Minor', 'Lep': 'Lepus', 'Lib': 'Libra', 'Lup': 'Lupus',
+  'Lyn': 'Lynx', 'Lyr': 'Lyra', 'Men': 'Mensa', 'Mic': 'Microscopium',
+  'Mon': 'Monoceros', 'Mus': 'Musca', 'Nor': 'Norma', 'Oct': 'Octans',
+  'Oph': 'Ophiuchus', 'Ori': 'Orion', 'Pav': 'Pavo', 'Peg': 'Pegasus',
+  'Per': 'Perseus', 'Phe': 'Phoenix', 'Pic': 'Pictor', 'Psc': 'Pisces',
+  'PsA': 'Piscis Austrinus', 'Pup': 'Puppis', 'Pyx': 'Pyxis', 'Ret': 'Reticulum',
+  'Sge': 'Sagitta', 'Sgr': 'Sagittarius', 'Sco': 'Scorpius', 'Scl': 'Sculptor',
+  'Sct': 'Scutum', 'Ser': 'Serpens', 'Sex': 'Sextans', 'Tau': 'Taurus',
+  'Tel': 'Telescopium', 'Tri': 'Triangulum', 'TrA': 'Triangulum Australe',
+  'Tuc': 'Tucana', 'UMa': 'Ursa Major', 'UMi': 'Ursa Minor', 'Vel': 'Vela',
+  'Vir': 'Virgo', 'Vol': 'Volans', 'Vul': 'Vulpecula',
+};
+
+const CARDINALS = [
+  { l: 'N', az: 0 }, { l: 'NE', az: 45 }, { l: 'E', az: 90 },
+  { l: 'SE', az: 135 }, { l: 'S', az: 180 }, { l: 'SW', az: 225 },
+  { l: 'W', az: 270 }, { l: 'NW', az: 315 },
+];
 
 /* ═══════════════════════════════════════════════════════════════════
    Page
@@ -63,62 +99,101 @@ export default function ObservatoryPage() {
   const router = useRouter();
 
   /* ── UI state ── */
-  const [phase,     setPhase]     = useState<'setup' | 'sky'>('setup');
-  const [query,     setQuery]     = useState('');
-  const [results,   setResults]   = useState<NominatimResult[]>([]);
-  const [selLoc,    setSelLoc]    = useState<ObserverLoc | null>(null);
-  const [observer,  setObserver]  = useState({ lat: 28.61, lon: 77.21 }); // New Delhi default
+  const [phase, setPhase] = useState<'setup' | 'sky'>('setup');
+  const [query, setQuery] = useState('');
+  const [results, setResults] = useState<NominatimResult[]>([]);
+  const [selLoc, setSelLoc] = useState<ObserverLoc | null>(null);
+  const [observer, setObserver] = useState({ lat: 28.61, lon: 77.21 }); // New Delhi default
 
   /* ── Sky layer toggles ── */
-  const [showSat,   setShowSat]   = useState(true);
-  const [showPlanet,setShowPlanet]= useState(true);
+  const [showSat, setShowSat] = useState(true);
+  const [showPlanet, setShowPlanet] = useState(true);
   const [showConst, setShowConst] = useState(true);
-  const [showGrid,  setShowGrid]  = useState(false);
-  const [showGround,setShowGround]= useState(true);
-  const [showAtm,   setShowAtm]   = useState(true);
+  const [showGrid, setShowGrid] = useState(false);
+  const [showGround, setShowGround] = useState(true);
+  const [showAtm, setShowAtm] = useState(true);
 
   /* ── Sim time ── */
-  const [playing,   setPlaying]   = useState(true);
-  const [timeOffset,setTimeOffset]= useState(0); // minutes
-  const simTimeRef  = useRef(Date.now());
-  const [dispTime,  setDispTime]  = useState('');
+  const [playing, setPlaying] = useState(true);
+  const [timeOffset, setTimeOffset] = useState(0); // minutes
+  const simTimeRef = useRef(Date.now());
+  const [dispTime, setDispTime] = useState('');
 
   /* ── Data ── */
-  const [tles, setTles]           = useState<SatelliteRecord[]>([]);
+  const [tles, setTles] = useState<SatelliteRecord[]>([]);
+  const [constReady, setConstReady] = useState(false);
+
+  /* ── Refs that mirror the latest state for use inside the render loop.
+        The loop is created once per `phase` change and keeps running via
+        requestAnimationFrame; reading state directly inside it would
+        freeze those values at whatever they were the moment the loop was
+        created (this was the actual reason toolbar toggles / time
+        controls had no visible effect). Refs always hold the live value
+        because we re-assign them on every render, below. ── */
+  const showSatRef = useRef(showSat);
+  const showPlanetRef = useRef(showPlanet);
+  const showConstRef = useRef(showConst);
+  const showGridRef = useRef(showGrid);
+  const showGroundRef = useRef(showGround);
+  const showAtmRef = useRef(showAtm);
+  const playingRef = useRef(playing);
+  const timeOffsetRef = useRef(timeOffset);
+  const observerRef = useRef(observer);
+  const tlesRef = useRef<SatelliteRecord[]>(tles);
+
+  showSatRef.current = showSat;
+  showPlanetRef.current = showPlanet;
+  showConstRef.current = showConst;
+  showGridRef.current = showGrid;
+  showGroundRef.current = showGround;
+  showAtmRef.current = showAtm;
+  playingRef.current = playing;
+  timeOffsetRef.current = timeOffset;
+  observerRef.current = observer;
+  tlesRef.current = tles;
 
   /* ── Three.js refs ── */
-  const mountRef        = useRef<HTMLDivElement>(null);
-  const labelsRef       = useRef<HTMLCanvasElement>(null);
-  const rendererRef     = useRef<THREE.WebGLRenderer | null>(null);
-  const sceneRef        = useRef<THREE.Scene | null>(null);
-  const cameraRef       = useRef<THREE.PerspectiveCamera | null>(null);
-  const controlsRef     = useRef<OrbitControls | null>(null);
-  const rafRef          = useRef<number>(0);
+  const mountRef = useRef<HTMLDivElement>(null);
+  const labelsRef = useRef<HTMLCanvasElement>(null);
+  const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
+  const sceneRef = useRef<THREE.Scene | null>(null);
+  const cameraRef = useRef<THREE.PerspectiveCamera | null>(null);
+  const controlsRef = useRef<OrbitControls | null>(null);
+  const rafRef = useRef<number>(0);
 
   // Layer groups
-  const starSphereRef   = useRef<THREE.Group | null>(null); // rotates with sidereal time
-  const constGroupRef   = useRef<THREE.Group | null>(null); // same rotation
-  const satGroupRef     = useRef<THREE.Group | null>(null); // AzEl, rebuilt each frame
-  const planetGroupRef  = useRef<THREE.Group | null>(null); // AzEl, rebuilt each frame
-  const groundRef       = useRef<THREE.Mesh | null>(null);
-  const atmRef          = useRef<THREE.Mesh | null>(null);
-  const gridGroupRef    = useRef<THREE.Group | null>(null);
-  const milkyWayRef     = useRef<THREE.Points | null>(null);
+  const starSphereRef = useRef<THREE.Group | null>(null); // rotates with sidereal time
+  const constGroupRef = useRef<THREE.Group | null>(null); // same rotation
+  const constLinesDataRef = useRef<ConstellationLine3D[]>([]);
+  const constCentroidsRef = useRef<Map<string, THREE.Vector3>>(new Map());
+  const constFetchedRef = useRef(false);
+  const satGroupRef = useRef<THREE.Group | null>(null); // AzEl, rebuilt each frame
+  const planetGroupRef = useRef<THREE.Group | null>(null); // AzEl, rebuilt each frame
+  const groundRef = useRef<THREE.Mesh | null>(null);
+  const atmRef = useRef<THREE.Mesh | null>(null);
+  const gridGroupRef = useRef<THREE.Group | null>(null);
+  const milkyWayRef = useRef<THREE.Points | null>(null);
 
   /* ─────────────────────────────────────────────────────────────────
      Fetch TLEs + stars once
      ───────────────────────────────────────────────────────────────── */
   useEffect(() => {
+    console.log('[TLE] Starting TLE fetch...');
     const groups = ['stations', 'visual', 'starlink', 'gps-ops', 'weather'];
     Promise.all(
       groups.map(g =>
         fetch(`/api/tle?group=${g}`)
-          .then(r => r.text())
-          .catch(() => '')
+          .then(r => {
+            console.log(`[TLE] ${g}: status=${r.status}`);
+            return r.text();
+          })
+          .catch(err => { console.warn(`[TLE] ${g} failed:`, err); return ''; })
       )
     ).then(texts => {
       const combined = texts.join('\n');
-      setTles(parseTLEBlock(combined));
+      const parsed = parseTLEBlock(combined);
+      console.log(`[TLE] Parsed ${parsed.length} satellites from ${combined.length} chars`);
+      setTles(parsed);
     });
   }, []);
 
@@ -147,7 +222,7 @@ export default function ObservatoryPage() {
       if (playing) simTimeRef.current = Date.now() + timeOffset * 60000;
       const d = new Date(simTimeRef.current);
       setDispTime(
-        d.toLocaleDateString('en-GB', { day:'2-digit', month:'short', year:'numeric' }) +
+        d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) +
         '  ' +
         d.toLocaleTimeString('en-GB', { hour12: false }) +
         ' UTC'
@@ -172,6 +247,7 @@ export default function ObservatoryPage() {
     renderer.setSize(W, H);
     renderer.setPixelRatio(DPR);
     renderer.setClearColor(0x000005, 1);
+    renderer.sortObjects = true;
     currentMount.appendChild(renderer.domElement);
     rendererRef.current = renderer;
 
@@ -179,30 +255,54 @@ export default function ObservatoryPage() {
     const scene = new THREE.Scene();
     sceneRef.current = scene;
 
-    /* ── Camera — inside the celestial sphere, at origin ── */
+    /* ── Camera — fixed near the origin, slightly above ground ── */
     const camera = new THREE.PerspectiveCamera(65, W / H, 0.01, 2000);
-    camera.position.set(0, 0.5, 0); // slightly above ground
+    camera.position.set(0, 0.5, 0);
     cameraRef.current = camera;
 
-    /* ── OrbitControls ── */
+    /* ── OrbitControls, configured as a "look around from a fixed point"
+       control rather than a true orbit-camera. The camera's *position*
+       must never meaningfully change: the ground plane sits right at
+       y≈0, and if the camera is allowed to drift to a different height
+       (which is exactly what variable-radius orbiting does) it can end
+       up below the ground, which then disappears (you're seeing its
+       unrendered backside). Locking the orbit radius to a tiny constant
+       keeps the camera in a sub-centimeter bubble around its start
+       point — visually identical to a fixed eye position — while still
+       allowing free look-around rotation. ── */
     const controls = new OrbitControls(camera, renderer.domElement);
-    controls.enablePan     = false;
-    controls.enableZoom    = true;
+    controls.enablePan = false;
+    controls.enableZoom = false; // see wheel handler below — FOV zoom instead of dollying
     controls.enableDamping = true;
     controls.dampingFactor = 0.07;
-    controls.rotateSpeed   = -0.4;  // negative → drag sky naturally
-    controls.zoomSpeed     = 0.7;
-    controls.minDistance   = 0.01;
-    controls.maxDistance   = 0.5;
-    controls.target.set(0, 0.2, -1); // look toward south horizon initially
+    controls.rotateSpeed = -0.4;  // negative → drag sky naturally
+
+    const LOOK_RADIUS = 0.05;
+    controls.minDistance = LOOK_RADIUS;
+    controls.maxDistance = LOOK_RADIUS;
+    const initialLookDir = new THREE.Vector3(0, 0.2, -1)
+      .sub(camera.position)
+      .normalize();
+    controls.target.copy(camera.position).addScaledVector(initialLookDir, LOOK_RADIUS);
     controls.update();
     controlsRef.current = controls;
 
+    // Scroll-to-zoom as an actual telescope-style field-of-view change.
+    // (Dollying the camera toward a target ~1 unit away does essentially
+    // nothing to a sky at radius ~900, and was what broke the ground.)
+    const MIN_FOV = 12, MAX_FOV = 80;
+    const onWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      camera.fov = THREE.MathUtils.clamp(camera.fov + e.deltaY * 0.04, MIN_FOV, MAX_FOV);
+      camera.updateProjectionMatrix();
+    };
+    renderer.domElement.addEventListener('wheel', onWheel, { passive: false });
+
     /* ── Labels canvas ── */
-    const lc  = labelsRef.current;
-    lc.width  = W * DPR;
+    const lc = labelsRef.current;
+    lc.width = W * DPR;
     lc.height = H * DPR;
-    lc.style.width  = `${W}px`;
+    lc.style.width = `${W}px`;
     lc.style.height = `${H}px`;
     const ctx = lc.getContext('2d')!;
     ctx.scale(DPR, DPR);
@@ -219,12 +319,12 @@ export default function ObservatoryPage() {
     const R_STAR = 900;
     fetch('/stars.json')
       .then(r => r.json())
-      .then((data: { features: Array<{ geometry: { coordinates: [number,number] }, properties: { mag: number, bv: string } }> }) => {
+      .then((data: { features: Array<{ geometry: { coordinates: [number, number] }, properties: { mag: number, bv: string } }> }) => {
         const pos: number[] = [], col: number[] = [], sz: number[] = [];
         for (const f of data.features) {
           const [ra, dec] = f.geometry.coordinates;
           const mag = f.properties.mag;
-          const bv  = parseFloat(f.properties.bv) || 0;
+          const bv = parseFloat(f.properties.bv) || 0;
           if (mag > 6.5) continue; // skip very faint
 
           const v = eqToVec(ra, dec, R_STAR);
@@ -232,13 +332,13 @@ export default function ObservatoryPage() {
 
           // Spectral colour from B-V index
           let r = 1, g = 1, b = 1;
-          if      (bv < -0.3) { r=0.67; g=0.77; b=1.00 }
-          else if (bv <  0.0) { r=0.80; g=0.90; b=1.00 }
-          else if (bv <  0.3) { r=0.95; g=0.97; b=1.00 }
-          else if (bv <  0.6) { r=1.00; g=0.99; b=0.90 }
-          else if (bv <  1.0) { r=1.00; g=0.90; b=0.70 }
-          else if (bv <  1.5) { r=1.00; g=0.75; b=0.50 }
-          else                { r=1.00; g=0.60; b=0.40 }
+          if (bv < -0.3) { r = 0.67; g = 0.77; b = 1.00 }
+          else if (bv < 0.0) { r = 0.80; g = 0.90; b = 1.00 }
+          else if (bv < 0.3) { r = 0.95; g = 0.97; b = 1.00 }
+          else if (bv < 0.6) { r = 1.00; g = 0.99; b = 0.90 }
+          else if (bv < 1.0) { r = 1.00; g = 0.90; b = 0.70 }
+          else if (bv < 1.5) { r = 1.00; g = 0.75; b = 0.50 }
+          else { r = 1.00; g = 0.60; b = 0.40 }
           col.push(r, g, b);
 
           const brightness = Math.max(0.5, (7 - mag) * 0.9);
@@ -247,18 +347,18 @@ export default function ObservatoryPage() {
 
         const g3 = new THREE.BufferGeometry();
         g3.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
-        g3.setAttribute('color',    new THREE.Float32BufferAttribute(col, 3));
-        g3.setAttribute('size',     new THREE.Float32BufferAttribute(sz,  1));
+        g3.setAttribute('starCol', new THREE.Float32BufferAttribute(col, 3));
+        g3.setAttribute('size', new THREE.Float32BufferAttribute(sz, 1));
 
         const starMat = new THREE.ShaderMaterial({
           uniforms: { uTime: { value: 0.0 } },
           vertexShader: `
             attribute float size;
-            attribute vec3  color;
+            attribute vec3  starCol;
             varying   vec3  vCol;
             uniform   float uTime;
             void main() {
-              vCol = color;
+              vCol = starCol;
               float tw = sin(uTime * 2.0 + position.x * 13.7 + position.z * 9.3) * 0.18;
               vec4 mv = modelViewMatrix * vec4(position, 1.0);
               gl_PointSize = max(0.8, size * (1.0 + tw)) * (300.0 / -mv.z);
@@ -275,8 +375,8 @@ export default function ObservatoryPage() {
             }
           `,
           transparent: true,
-          blending:    THREE.AdditiveBlending,
-          depthWrite:  false,
+          blending: THREE.AdditiveBlending,
+          depthWrite: false,
           vertexColors: true,
         });
 
@@ -286,9 +386,9 @@ export default function ObservatoryPage() {
         // Procedural fallback if stars.json missing
         const pos: number[] = [], col: number[] = [], sz: number[] = [];
         for (let i = 0; i < 4000; i++) {
-          const ra  = Math.random() * 24;
+          const ra = Math.random() * 24;
           const dec = (Math.asin(Math.random() * 2 - 1)) / D2R;
-          const v   = eqToVec(ra, dec, R_STAR);
+          const v = eqToVec(ra, dec, R_STAR);
           pos.push(v.x, v.y, v.z);
           const t = Math.random();
           col.push(0.7 + t * 0.3, 0.7 + t * 0.3, 0.85 + t * 0.15);
@@ -296,8 +396,8 @@ export default function ObservatoryPage() {
         }
         const g3 = new THREE.BufferGeometry();
         g3.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
-        g3.setAttribute('color',    new THREE.Float32BufferAttribute(col, 3));
-        g3.setAttribute('size',     new THREE.Float32BufferAttribute(sz,  1));
+        g3.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+        g3.setAttribute('size', new THREE.Float32BufferAttribute(sz, 1));
         const mat = new THREE.PointsMaterial({
           size: 0.8, vertexColors: true, transparent: true,
           blending: THREE.AdditiveBlending, depthWrite: false, sizeAttenuation: false,
@@ -316,15 +416,18 @@ export default function ObservatoryPage() {
         const l = Math.random() * 360;
         // Galactic latitude – gaussian, σ≈8° for the dense band
         const b = (Math.random() + Math.random() + Math.random() - 1.5) * 8;
-        // Convert galactic → equatorial (J2000 approx)
+        // Convert galactic → equatorial (J2000)
         // Galactic north pole: RA=192.85948°, Dec=27.12825°, l_NCP=122.93192°
         const lR = d2r(l), bR = d2r(b);
         const poleDec = d2r(27.12825);
-        const sinDec = Math.sin(bR)*Math.sin(poleDec) + Math.cos(bR)*Math.cos(poleDec)*Math.cos(d2r(122.93192)-lR);
+        const lCP = d2r(122.93192);
+        const sinDec = Math.sin(bR) * Math.sin(poleDec) + Math.cos(bR) * Math.cos(poleDec) * Math.cos(lCP - lR);
         const dec = Math.asin(sinDec);
-        const cosRA = (Math.cos(bR)*Math.sin(d2r(122.93192)-lR)) / Math.cos(dec);
-        const sinRA = (Math.cos(bR)*Math.cos(poleDec)*Math.sin(bR) - Math.sin(bR)*Math.sin(poleDec)*Math.cos(dec)) / Math.cos(dec);
-        const ra = Math.atan2(sinRA, cosRA) / D2R + 192.85948;
+        // cos(δ)·sin(α−α_NGP) and cos(δ)·cos(α−α_NGP) — atan2 cancels the
+        // shared cos(δ) factor, so we don't even need to divide it out.
+        const yComp = Math.cos(bR) * Math.sin(lCP - lR);
+        const xComp = Math.cos(poleDec) * Math.sin(bR) - Math.sin(poleDec) * Math.cos(bR) * Math.cos(lCP - lR);
+        const ra = Math.atan2(yComp, xComp) / D2R + 192.85948;
         const raH = ((ra % 360) + 360) % 360 / 15;
         const decD = dec / D2R;
 
@@ -340,8 +443,8 @@ export default function ObservatoryPage() {
       }
       const mwGeo = new THREE.BufferGeometry();
       mwGeo.setAttribute('position', new THREE.Float32BufferAttribute(mwPos, 3));
-      mwGeo.setAttribute('color',    new THREE.Float32BufferAttribute(mwCol, 3));
-      mwGeo.setAttribute('size',     new THREE.Float32BufferAttribute(mwSz,  1));
+      mwGeo.setAttribute('color', new THREE.Float32BufferAttribute(mwCol, 3));
+      mwGeo.setAttribute('size', new THREE.Float32BufferAttribute(mwSz, 1));
       const mwMat = new THREE.PointsMaterial({
         size: 1.5, vertexColors: true, transparent: true, opacity: 0.7,
         blending: THREE.AdditiveBlending, depthWrite: false, sizeAttenuation: false,
@@ -362,60 +465,133 @@ export default function ObservatoryPage() {
        4. SATELLITES & PLANETS (AzEl, rebuilt each frame)
        ════════════════════════════════════════ */
     const satGroup = new THREE.Group();
+    satGroup.frustumCulled = false;
     scene.add(satGroup);
     satGroupRef.current = satGroup;
+
+    // Satellites: one Points object, buffers mutated in place every frame.
+    // (The old code built a brand-new Mesh+Geometry+Material per satellite
+    // per frame and never disposed the previous ones — that GPU memory
+    // leak is what was crashing the tab.)
+    const MAX_SATS = 8000;
+    const satPosArr = new Float32Array(MAX_SATS * 3);
+    const satColArr = new Float32Array(MAX_SATS * 3);
+    const satSizeArr = new Float32Array(MAX_SATS);
+    const satPosAttr = new THREE.BufferAttribute(satPosArr, 3);
+    const satColAttr = new THREE.BufferAttribute(satColArr, 3);
+    const satSizeAttr = new THREE.BufferAttribute(satSizeArr, 1);
+    satPosAttr.usage = THREE.DynamicDrawUsage;
+    satColAttr.usage = THREE.DynamicDrawUsage;
+    satSizeAttr.usage = THREE.DynamicDrawUsage;
+    const satGeo = new THREE.BufferGeometry();
+    satGeo.setAttribute('position', satPosAttr);
+    satGeo.setAttribute('satCol', satColAttr);
+    satGeo.setAttribute('size', satSizeAttr);
+    satGeo.setDrawRange(0, 0);
+    const satMat = new THREE.ShaderMaterial({
+      vertexShader: `
+        attribute float size;
+        attribute vec3  satCol;
+        varying   vec3  vSatCol;
+        void main() {
+          vSatCol = satCol;
+          vec4 mv = modelViewMatrix * vec4(position, 1.0);
+          gl_PointSize = size * (643.0/ -mv.z);
+          gl_Position  = projectionMatrix * mv;
+        }
+      `,
+      fragmentShader: `
+        varying vec3 vSatCol;
+        void main() {
+          float d = length(gl_PointCoord - 0.5);
+          if (d > 0.5) discard;
+          float a = smoothstep(0.5, 0.1, d);
+          gl_FragColor = vec4(vSatCol, a);
+        }
+      `,
+      transparent: true,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending,
+    });
+    const satPoints = new THREE.Points(satGeo, satMat);
+    satPoints.frustumCulled = false;
+    satGroup.add(satPoints);
 
     const planetGroup = new THREE.Group();
     scene.add(planetGroup);
     planetGroupRef.current = planetGroup;
 
-    /* ════════════════════════════════════════
-       5. GROUND — flat disc + silhouette hills
-       ════════════════════════════════════════ */
-    // Main ground disc
-    const groundGeo = new THREE.CylinderGeometry(700, 700, 1, 128, 1);
-    const groundMat = new THREE.MeshBasicMaterial({ color: 0x050a0f });
-    const ground    = new THREE.Mesh(groundGeo, groundMat);
-    ground.position.y = -0.5;
-    scene.add(ground);
-    groundRef.current = ground;
+    // Planets: a small fixed pool of meshes, repositioned/recolored each
+    // frame instead of recreated.
+    const MAX_PLANETS = 10;
+    const unitCircleGeo = new THREE.CircleGeometry(1, 32);
+    const planetMeshes: THREE.Mesh[] = [];
+    const planetGlowMeshes: THREE.Mesh[] = [];
+    for (let i = 0; i < MAX_PLANETS; i++) {
+      const mat = new THREE.MeshBasicMaterial({ color: 0xffffff, side: THREE.DoubleSide });
+      const m = new THREE.Mesh(unitCircleGeo, mat);
+      m.visible = false;
+      planetGroup.add(m);
+      planetMeshes.push(m);
 
-    // Horizon silhouette ring (jagged city/mountain outline)
-    {
-      const hPoints: THREE.Vector3[] = [];
-      const SEGS = 256;
-      for (let i = 0; i <= SEGS; i++) {
-        const az = (i / SEGS) * Math.PI * 2;
-        // Slight random elevation for a city skyline feel
-        const noise = Math.sin(az * 7.3) * 0.012 + Math.sin(az * 13.1) * 0.007
-                    + Math.sin(az * 23.7) * 0.004 + Math.random() * 0.003;
-        const el = -0.01 + noise; // just below/above horizon
-        const r  = 600;
-        hPoints.push(new THREE.Vector3(r * Math.sin(az), r * el, -r * Math.cos(az)));
-      }
-      // Close it
-      hPoints.push(hPoints[0].clone());
-      const hGeo = new THREE.BufferGeometry().setFromPoints(hPoints);
-      const hMat = new THREE.LineBasicMaterial({ color: 0x0a1520, linewidth: 2 });
-      scene.add(new THREE.Line(hGeo, hMat));
-
-      // Fill below horizon with solid dark disc visible from inside
-      const fillGeo = new THREE.CircleGeometry(700, 128);
-      const fillMat = new THREE.MeshBasicMaterial({ color: 0x020508, side: THREE.DoubleSide });
-      const fill    = new THREE.Mesh(fillGeo, fillMat);
-      fill.rotation.x = -Math.PI / 2;
-      fill.position.y = -0.02;
-      scene.add(fill);
+      const glowMat = new THREE.MeshBasicMaterial({
+        color: 0xffffff, transparent: true, opacity: 0.08,
+        side: THREE.DoubleSide, blending: THREE.AdditiveBlending,
+      });
+      const gm = new THREE.Mesh(unitCircleGeo, glowMat);
+      gm.visible = false;
+      planetGroup.add(gm);
+      planetGlowMeshes.push(gm);
     }
+
+    /* ════════════════════════════════════════
+       5. GROUND — single clean disc (no fog pass — see note below)
+       ════════════════════════════════════════ */
+    const groundDisc = new THREE.Mesh(
+      new THREE.CircleGeometry(900, 128),
+      new THREE.MeshBasicMaterial({
+        color: 0x050a14,
+        side: THREE.DoubleSide, // safety margin: stays visible even at/under y=0
+        depthWrite: true,
+      })
+    );
+    groundDisc.rotation.x = -Math.PI / 2;  // lay flat
+    groundDisc.position.y = -0.05;          // just below horizon
+    groundDisc.renderOrder = 2;             // render after sky objects
+    scene.add(groundDisc);
+    groundRef.current = groundDisc;
+
+    // ── HORIZON LINE: ring at Y=0 ──────────────────────────────────────
+    const horizonPts: THREE.Vector3[] = [];
+    for (let i = 0; i <= 128; i++) {
+      const angle = (i / 128) * Math.PI * 2;
+      horizonPts.push(new THREE.Vector3(
+        850 * Math.cos(angle),
+        0,
+        850 * Math.sin(angle)
+      ));
+    }
+    const horizonLine = new THREE.Line(
+      new THREE.BufferGeometry().setFromPoints(horizonPts),
+      new THREE.LineBasicMaterial({ color: 0x1a3a5a, transparent: true, opacity: 0.4 })
+    );
+    scene.add(horizonLine);
+
+    // NOTE: the original ground-fog cylinder is removed. Working through its
+    // gradient math, the fade only became non-zero far below where the
+    // camera or the ground disc could ever let you see — it was an extra
+    // shader pass every frame that never actually rendered anything visible.
+    // The atmosphere glow dome below plus the horizon line give the same
+    // "ground presence" cue for free.
 
     /* ════════════════════════════════════════
        6. ATMOSPHERE GLOW (above horizon only)
        ════════════════════════════════════════ */
     const atmGeo = new THREE.SphereGeometry(850, 64, 32, 0, Math.PI * 2, 0, Math.PI / 2);
     const atmMat = new THREE.ShaderMaterial({
-      side:         THREE.BackSide,
-      transparent:  true,
-      depthWrite:   false,
+      side: THREE.BackSide,
+      transparent: true,
+      depthWrite: false,
       vertexShader: `
         varying float vY;
         void main() {
@@ -465,12 +641,21 @@ export default function ObservatoryPage() {
        RENDER LOOP
        ════════════════════════════════════════ */
 
+    // Satellite orbital propagation is throttled — az/el barely changes
+    // over a quarter second, so recomputing SGP4 for the whole catalog on
+    // every single frame (the old behaviour) was pure wasted CPU and, with
+    // a large catalog (e.g. the full 'starlink' group), enough to make the
+    // tab hang.
+    const SAT_UPDATE_MS = 250;
+    let lastSatCalc = -Infinity;
+    let cachedOverhead: ReturnType<typeof propagateAll> = [];
+
     const animate = (t: number) => {
       rafRef.current = requestAnimationFrame(animate);
 
-      if (playing) simTimeRef.current = Date.now() + timeOffset * 60000;
-      const now  = new Date(simTimeRef.current);
-      const obs  = { lat: observer.lat, lon: observer.lon };
+      if (playingRef.current) simTimeRef.current = Date.now() + timeOffsetRef.current * 60000;
+      const now = new Date(simTimeRef.current);
+      const obs = { lat: observerRef.current.lat, lon: observerRef.current.lon };
 
       controls.update();
 
@@ -496,106 +681,155 @@ export default function ObservatoryPage() {
         }
       }
 
-      /* ── Constellation lines (rebuilt every 5s is fine, but
-             they auto-rotate with the star sphere, so we only
-             need to build them once per observer change) ── */
-      if (constGroupRef.current && constGroupRef.current.children.length === 0 && showConst) {
-        buildConstellations(obs.lat, obs.lon, now);
-      }
-
       /* ── Clear labels canvas ── */
       const lw = window.innerWidth, lh = window.innerHeight;
       ctx.clearRect(0, 0, lw, lh);
 
-      /* ── Satellites (AzEl, rebuild each frame) ── */
-      if (satGroupRef.current) {
-        satGroupRef.current.clear();
-        if (showSat && tles.length > 0) {
-          const overhead = propagateAll(tles, obs, now).filter(s => s.el > 0);
-          for (const s of overhead) {
-            const pos   = horVec(s.az, s.el, 750);
-            const isISS = s.type === 'iss';
-            const col   = isISS ? 0x00ff88 : s.type === 'starlink' ? 0x4488ff : 0x88ccff;
-            const sz    = isISS ? 5 : s.tier === 'naked' ? 3 : 1.5;
+      /* ── Satellites (AzEl, throttled propagation, pooled buffer) ── */
+      if (showSatRef.current && tlesRef.current.length > 0) {
+        if (t - lastSatCalc > SAT_UPDATE_MS) {
+          cachedOverhead = propagateAll(tlesRef.current, obs, now).filter(s => s.el > 0);
+          lastSatCalc = t;
+          console.log(`[SAT] overhead: ${cachedOverhead.length}, tles loaded: ${tlesRef.current.length}`);
+        }
+        const count = Math.min(cachedOverhead.length, MAX_SATS);
+        for (let i = 0; i < count; i++) {
+          const s = cachedOverhead[i];
+          const pos = horVec(s.az, s.el, 750);
+          satPosArr[i * 3] = pos.x;
+          satPosArr[i * 3 + 1] = pos.y;
+          satPosArr[i * 3 + 2] = pos.z;
 
-            // Sprite-like dot
-            const geo = new THREE.CircleGeometry(sz, 8);
-            const mat = new THREE.MeshBasicMaterial({ color: col, side: THREE.DoubleSide });
-            const m   = new THREE.Mesh(geo, mat);
-            m.position.copy(pos);
-            m.lookAt(0, 0, 0);
-            satGroupRef.current.add(m);
+          const isISS = s.type === 'iss';
+          let r = 0.53, g = 0.80, b = 1.00;            // default 0x88ccff
+          if (isISS) { r = 0.00; g = 1.00; b = 0.53; } // 0x00ff88
+          else if (s.type === 'starlink') { r = 0.27; g = 0.53; b = 1.00; } // 0x4488ff
+          satColArr[i * 3] = r; satColArr[i * 3 + 1] = g; satColArr[i * 3 + 2] = b;
+          satSizeArr[i] = isISS ? 9 : s.tier === 'naked' ? 6 : 3;
 
-            // Label on canvas
+          // Only label the ISS and naked-eye-visible satellites — labeling
+          // every Starlink dot was both unreadable and the main per-frame
+          // canvas cost in this loop.
+          if (isISS || s.tier === 'naked') {
             const sp = worldToScreen(pos, camera, lw, lh);
             if (sp) {
-              ctx.font = isISS ? `bold 11px Space Mono, monospace` : `9px Space Mono, monospace`;
-              ctx.fillStyle = isISS ? '#00ff88' : '#66aaff';
-              ctx.shadowColor = 'rgba(0,0,0,0.9)'; ctx.shadowBlur = 3;
-              ctx.fillText(isISS ? '🛸 ISS' : s.name.split(' ')[0], sp.x + 8, sp.y - 4);
-              ctx.shadowBlur = 0;
+              if (isISS) {
+                // Draw ISS as a visible crosshair + pulsing ring on the canvas
+                const t2 = performance.now() * 0.003;
+                const pulse = 8 + Math.sin(t2 * 3) * 4;
+
+                // Outer pulsing ring
+                ctx.beginPath();
+                ctx.arc(sp.x, sp.y, pulse, 0, Math.PI * 2);
+                ctx.strokeStyle = 'rgba(0,255,136,0.5)';
+                ctx.lineWidth = 1.5;
+                ctx.stroke();
+
+                // Inner dot
+                ctx.beginPath();
+                ctx.arc(sp.x, sp.y, 3, 0, Math.PI * 2);
+                ctx.fillStyle = '#00ff88';
+                ctx.fill();
+
+                // Cross lines
+                ctx.strokeStyle = 'rgba(0,255,136,0.7)';
+                ctx.lineWidth = 1;
+                ctx.beginPath();
+                ctx.moveTo(sp.x - 14, sp.y); ctx.lineTo(sp.x - 6, sp.y);
+                ctx.moveTo(sp.x + 6, sp.y); ctx.lineTo(sp.x + 14, sp.y);
+                ctx.moveTo(sp.x, sp.y - 14); ctx.lineTo(sp.x, sp.y - 6);
+                ctx.moveTo(sp.x, sp.y + 6); ctx.lineTo(sp.x, sp.y + 14);
+                ctx.stroke();
+
+                // Label
+                ctx.font = 'bold 11px Space Mono, monospace';
+                ctx.fillStyle = '#00ff88';
+                ctx.shadowColor = 'rgba(0,0,0,0.9)'; ctx.shadowBlur = 4;
+                ctx.fillText('ISS', sp.x + 16, sp.y - 6);
+                ctx.shadowBlur = 0;
+              } else {
+                // Naked-eye satellite: small circle + name
+                ctx.beginPath();
+                ctx.arc(sp.x, sp.y, 2.5, 0, Math.PI * 2);
+                ctx.fillStyle = '#66aaff';
+                ctx.fill();
+
+                ctx.font = '9px Space Mono, monospace';
+                ctx.fillStyle = '#66aaff';
+                ctx.shadowColor = 'rgba(0,0,0,0.9)'; ctx.shadowBlur = 3;
+                ctx.fillText(s.name.split(' ')[0], sp.x + 7, sp.y - 3);
+                ctx.shadowBlur = 0;
+              }
             }
           }
         }
+        satPosAttr.needsUpdate = true;
+        satColAttr.needsUpdate = true;
+        satSizeAttr.needsUpdate = true;
+        satGeo.setDrawRange(0, count);
+      } else {
+        satGeo.setDrawRange(0, 0);
       }
 
-      /* ── Planets (AzEl, rebuild each frame) ── */
-      if (planetGroupRef.current) {
-        planetGroupRef.current.clear();
-        if (showPlanet) {
-          const planets = getPlanetPositions(obs, now);
-          for (const p of planets) {
-            if (p.el < -5) continue;
-            const pos = horVec(p.az, p.el, 760);
-            let col = 0xffffff, sz = 2.5;
-            if (p.type === 'sun')       { col = 0xffee33; sz = 16 }
-            else if (p.type === 'moon') { col = 0xddeeff; sz = 12 }
-            else if (p.name === 'Venus')  { col = 0xffffcc; sz = 5 }
-            else if (p.name === 'Jupiter')  { col = 0xffcc88; sz = 4.5 }
-            else if (p.name === 'Mars')    { col = 0xff6644; sz = 4 }
-            else if (p.name === 'Saturn')  { col = 0xeecc88; sz = 3.5 }
+      /* ── Planets (AzEl, pooled meshes) ── */
+      if (showPlanetRef.current) {
+        const planets = getPlanetPositions(obs, now);
+        let idx = 0;
+        for (const p of planets) {
+          if (p.el < -5 || idx >= MAX_PLANETS) continue;
+          const pos = horVec(p.az, p.el, 760);
+          let col = 0xffffff, sz = 2.5;
+          if (p.type === 'sun') { col = 0xffee33; sz = 16; }
+          else if (p.type === 'moon') { col = 0xddeeff; sz = 12; }
+          else if (p.name === 'Venus') { col = 0xffffcc; sz = 5; }
+          else if (p.name === 'Jupiter') { col = 0xffcc88; sz = 4.5; }
+          else if (p.name === 'Mars') { col = 0xff6644; sz = 4; }
+          else if (p.name === 'Saturn') { col = 0xeecc88; sz = 3.5; }
 
-            const geo = new THREE.CircleGeometry(sz, p.type === 'sun' ? 32 : 16);
-            const mat = new THREE.MeshBasicMaterial({ color: col, side: THREE.DoubleSide });
-            const m   = new THREE.Mesh(geo, mat);
-            m.position.copy(pos);
-            m.lookAt(0, 0, 0);
-            planetGroupRef.current.add(m);
+          const m = planetMeshes[idx];
+          m.position.copy(pos);
+          m.lookAt(0, 0, 0);
+          m.scale.setScalar(sz);
+          (m.material as THREE.MeshBasicMaterial).color.setHex(col);
+          m.visible = true;
 
-            // Glow for Sun/Moon
-            if (p.type === 'sun' || p.type === 'moon') {
-              const glowGeo = new THREE.CircleGeometry(sz * 2.5, 32);
-              const glowMat = new THREE.MeshBasicMaterial({
-                color: col, transparent: true, opacity: 0.08,
-                side: THREE.DoubleSide, blending: THREE.AdditiveBlending,
-              });
-              const glow = new THREE.Mesh(glowGeo, glowMat);
-              glow.position.copy(pos); glow.lookAt(0,0,0);
-              planetGroupRef.current.add(glow);
-            }
-
-            // Label
-            const sp = worldToScreen(pos, camera, lw, lh);
-            if (sp && p.el > -2) {
-              ctx.font = `bold 11px Space Mono, monospace`;
-              ctx.fillStyle = p.type === 'sun' ? '#ffee44' : p.type === 'moon' ? '#aaccff' : '#ffffff';
-              ctx.shadowColor = 'rgba(0,0,0,0.9)'; ctx.shadowBlur = 4;
-              ctx.fillText(p.name, sp.x + (sz / 2) + 6, sp.y - 4);
-              ctx.shadowBlur = 0;
-            }
+          const glow = planetGlowMeshes[idx];
+          if (p.type === 'sun' || p.type === 'moon') {
+            glow.position.copy(pos);
+            glow.lookAt(0, 0, 0);
+            glow.scale.setScalar(sz * 2.5);
+            (glow.material as THREE.MeshBasicMaterial).color.setHex(col);
+            glow.visible = true;
+          } else {
+            glow.visible = false;
           }
+
+          // Label
+          const sp = worldToScreen(pos, camera, lw, lh);
+          if (sp && p.el > -2) {
+            ctx.font = `bold 11px Space Mono, monospace`;
+            ctx.fillStyle = p.type === 'sun' ? '#ffee44' : p.type === 'moon' ? '#aaccff' : '#ffffff';
+            ctx.shadowColor = 'rgba(0,0,0,0.9)'; ctx.shadowBlur = 4;
+            ctx.fillText(p.name, sp.x + (sz / 2) + 6, sp.y - 4);
+            ctx.shadowBlur = 0;
+          }
+          idx++;
+        }
+        for (; idx < MAX_PLANETS; idx++) {
+          planetMeshes[idx].visible = false;
+          planetGlowMeshes[idx].visible = false;
+        }
+      } else {
+        for (let i = 0; i < MAX_PLANETS; i++) {
+          planetMeshes[i].visible = false;
+          planetGlowMeshes[i].visible = false;
         }
       }
 
       /* ── Cardinal direction labels on horizon ── */
-      const cardinals = [
-        { l: 'N', az: 0 }, { l: 'NE', az: 45 }, { l: 'E', az: 90 },
-        { l: 'SE', az: 135 }, { l: 'S', az: 180 }, { l: 'SW', az: 225 },
-        { l: 'W', az: 270 }, { l: 'NW', az: 315 },
-      ];
-      for (const c of cardinals) {
+      for (const c of CARDINALS) {
         const pos = horVec(c.az, 2, 600);
-        const sp  = worldToScreen(pos, camera, lw, lh);
+        const sp = worldToScreen(pos, camera, lw, lh);
         if (!sp) continue;
         ctx.font = `bold 12px Space Mono, monospace`;
         const isMain = c.l.length === 1;
@@ -605,11 +839,45 @@ export default function ObservatoryPage() {
         ctx.shadowBlur = 0;
       }
 
+      // Constellation name labels
+      if (showConstRef.current && constLinesDataRef.current.length > 0) {
+        for (const c of constLinesDataRef.current) {
+          // Find the centroid of this constellation's first segment.
+          // Cached per name so we don't recompute it from scratch every
+          // single frame — only the rotation applied to it changes.
+          if (c.segments.length === 0 || c.segments[0].length === 0) continue;
+
+          let centroid = constCentroidsRef.current.get(c.name);
+          if (!centroid) {
+            const seg = c.segments[0];
+            centroid = new THREE.Vector3();
+            for (const pt of seg) centroid.add(pt);
+            centroid.divideScalar(seg.length);
+            constCentroidsRef.current.set(c.name, centroid);
+          }
+
+          // The centroid is in equatorial space — apply the star sphere rotation
+          const worldCentroid = centroid.clone().applyEuler(starSphereRef.current!.rotation);
+
+          const sp = worldToScreen(worldCentroid, camera, lw, lh);
+          if (!sp) continue;
+
+          ctx.font = '10px Space Mono, monospace';
+          ctx.fillStyle = 'rgba(100,140,220,0.6)';
+          ctx.shadowColor = 'rgba(0,0,0,0.9)';
+          ctx.shadowBlur = 3;
+          ctx.textAlign = 'center';
+          ctx.fillText(CONST_NAMES[c.name] || c.name, sp.x, sp.y);
+          ctx.textAlign = 'left';
+          ctx.shadowBlur = 0;
+        }
+      }
+
       /* ── Layer visibility ── */
-      if (groundRef.current)    groundRef.current.visible = showGround;
-      if (atmRef.current)       atmRef.current.visible    = showAtm;
-      if (gridGroupRef.current) gridGroupRef.current.visible = showGrid;
-      if (constGroupRef.current) constGroupRef.current.visible = showConst;
+      if (groundRef.current) groundRef.current.visible = showGroundRef.current;
+      if (atmRef.current) atmRef.current.visible = showAtmRef.current;
+      if (gridGroupRef.current) gridGroupRef.current.visible = showGridRef.current;
+      if (constGroupRef.current) constGroupRef.current.visible = showConstRef.current;
 
       renderer.render(scene, camera);
     };
@@ -633,57 +901,76 @@ export default function ObservatoryPage() {
     return () => {
       cancelAnimationFrame(rafRef.current);
       window.removeEventListener('resize', onResize);
+      renderer.domElement.removeEventListener('wheel', onWheel);
       controls.dispose();
+      satGeo.dispose();
+      satMat.dispose();
+      unitCircleGeo.dispose();
+      planetMeshes.forEach(m => (m.material as THREE.Material).dispose());
+      planetGlowMeshes.forEach(m => (m.material as THREE.Material).dispose());
       renderer.dispose();
       if (currentMount?.contains(renderer.domElement))
         currentMount.removeChild(renderer.domElement);
     };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // Intentionally only [phase]: everything reactive the loop needs is read
+    // from the *Ref mirrors above, not from these closed-over values.
   }, [phase]);
 
   /* ─────────────────────────────────────────────────────────────────
-     Build constellation lines in equatorial coords
-     (called once; they rotate with the star sphere automatically)
+     Fetch constellation JSON and build 3D lines
      ───────────────────────────────────────────────────────────────── */
-  const buildConstellations = useCallback((lat: number, lon: number, date: Date) => {
+  const renderConstellationLines = useCallback(() => {
     const cg = constGroupRef.current;
     if (!cg) return;
+
+    // Clear existing lines
     while (cg.children.length > 0) cg.remove(cg.children[0]);
 
-    const lines = getConstellationLines(lat, lon, date);
-    const mat   = new THREE.LineBasicMaterial({
-      color: 0x3355aa, transparent: true, opacity: 0.35,
+    if (!showConst || constLinesDataRef.current.length === 0) return;
+
+    const lineMat = new THREE.LineBasicMaterial({
+      color: 0x2244aa,
+      transparent: true,
+      opacity: 0.45,
     });
 
-    for (const c of lines) {
-      // Convert AzEl back to world coords (they're already computed for the observer)
-      // We keep them in AzEl space and DON'T add to the rotating starSphere
-      // Instead we use the local horizon frame (not rotating)
-      const pts: THREE.Vector3[] = [];
-      for (const pt of c.points) {
-        if (pt.el > -5) pts.push(horVec(pt.az, pt.el, 880));
-      }
-      if (pts.length >= 2) {
-        const geo = new THREE.BufferGeometry().setFromPoints(pts);
-        cg.add(new THREE.Line(geo, mat));
+    for (const constellation of constLinesDataRef.current) {
+      for (const segment of constellation.segments) {
+        if (segment.length < 2) continue;
+        const geo = new THREE.BufferGeometry().setFromPoints(segment);
+        const line = new THREE.Line(geo, lineMat.clone());
+        // Store the constellation name for hover detection later
+        line.userData.constellation = constellation.name;
+        cg.add(line);
       }
     }
+  }, [showConst]);
+
+  // Fetch the constellation data once.
+  useEffect(() => {
+    if (constFetchedRef.current) return;
+    constFetchedRef.current = true;
+
+    fetch('/constellations.lines.json')
+      .then(r => r.json())
+      .then(geojson => {
+        constLinesDataRef.current = buildConstellationLines3D(geojson, 880);
+        setConstReady(true);
+      })
+      .catch(err => console.warn('Constellation data failed to load:', err));
   }, []);
 
-  // Rebuild constellations when observer changes
+  // Render (or clear) the lines whenever the data finishes loading, the 3D
+  // scene becomes available, or the toggle changes. Previously this only
+  // ran from inside the fetch's `.then()`, which in practice almost always
+  // fired *before* the user had even left the setup screen — i.e. before
+  // constGroupRef existed — so the lines were parsed but never actually
+  // added to the scene, and nothing else ever retried.
   useEffect(() => {
-    if (phase === 'sky' && constGroupRef.current) {
-      constGroupRef.current.clear();
-      buildConstellations(observer.lat, observer.lon, new Date(simTimeRef.current));
-    }
-  }, [observer, phase, buildConstellations]);
-
-  // Rebuild constellations toggle
-  useEffect(() => {
-    if (phase === 'sky' && showConst && constGroupRef.current?.children.length === 0) {
-      buildConstellations(observer.lat, observer.lon, new Date(simTimeRef.current));
-    }
-  }, [showConst, phase, observer, buildConstellations]);
+    if (!constReady || !constGroupRef.current) return;
+    renderConstellationLines();
+  }, [constReady, showConst, phase, renderConstellationLines]);
 
   /* ─────────────────────────────────────────────────────────────────
      Helpers
@@ -731,20 +1018,36 @@ export default function ObservatoryPage() {
         }}>
           {/* Animated star dots behind the card */}
           <div style={{ position: 'absolute', inset: 0, overflow: 'hidden', zIndex: 0 }}>
-            {Array.from({ length: 80 }).map((_, i) => (
-              <div key={i} style={{
-                position: 'absolute',
-                left: `${Math.random() * 100}%`,
-                top:  `${Math.random() * 100}%`,
-                width:  `${1 + Math.random() * 2}px`,
-                height: `${1 + Math.random() * 2}px`,
-                borderRadius: '50%',
-                background: 'white',
-                opacity: 0.1 + Math.random() * 0.5,
-                animation: `twinkle ${2 + Math.random() * 4}s ease-in-out infinite`,
-                animationDelay: `${Math.random() * 4}s`,
-              }} />
-            ))}
+            {Array.from({ length: 80 }).map((_, i) => {
+              const seed1 = (i * 2654435761) >>> 0;
+              const seed2 = (seed1 * 2654435761) >>> 0;
+              const seed3 = (seed2 * 2654435761) >>> 0;
+              const seed4 = (seed3 * 2654435761) >>> 0;
+              const seed5 = (seed4 * 2654435761) >>> 0;
+              const seed6 = (seed5 * 2654435761) >>> 0;
+
+              const left = (seed1 % 1000) / 10;
+              const top = (seed2 % 1000) / 10;
+              const size = 1 + (seed3 % 20) / 10;
+              const opacity = 0.1 + (seed4 % 50) / 100;
+              const duration = 2 + (seed5 % 40) / 10;
+              const delay = (seed6 % 40) / 10;
+
+              return (
+                <div key={i} style={{
+                  position: 'absolute',
+                  left: `${left}%`,
+                  top: `${top}%`,
+                  width: `${size}px`,
+                  height: `${size}px`,
+                  borderRadius: '50%',
+                  background: 'white',
+                  opacity: opacity,
+                  animation: `twinkle ${duration}s ease-in-out infinite`,
+                  animationDelay: `${delay}s`,
+                }} />
+              );
+            })}
           </div>
 
           <style>{`
@@ -818,7 +1121,7 @@ export default function ObservatoryPage() {
                   transition: 'border-color 0.2s',
                 }}
                 onFocus={e => e.target.style.borderColor = 'rgba(0,212,255,0.5)'}
-                onBlur={e  => e.target.style.borderColor = 'rgba(255,255,255,0.12)'}
+                onBlur={e => e.target.style.borderColor = 'rgba(255,255,255,0.12)'}
               />
 
               {/* Dropdown */}
@@ -836,8 +1139,8 @@ export default function ObservatoryPage() {
                       onClick={() => {
                         const loc = {
                           name: r.display_name.split(',')[0],
-                          lat:  parseFloat(r.lat),
-                          lon:  parseFloat(r.lon),
+                          lat: parseFloat(r.lat),
+                          lon: parseFloat(r.lon),
                         };
                         setSelLoc(loc);
                         setObserver({ lat: loc.lat, lon: loc.lon });
@@ -851,7 +1154,7 @@ export default function ObservatoryPage() {
                         letterSpacing: '0.03em',
                       }}
                       onMouseOver={e => e.currentTarget.style.background = 'rgba(0,212,255,0.08)'}
-                      onMouseOut={e  => e.currentTarget.style.background = 'transparent'}
+                      onMouseOut={e => e.currentTarget.style.background = 'transparent'}
                     >
                       {r.display_name}
                     </div>
@@ -870,7 +1173,7 @@ export default function ObservatoryPage() {
                 letterSpacing: '0.06em',
               }}>
                 ✓ &nbsp;{selLoc.lat.toFixed(4)}°{selLoc.lat >= 0 ? 'N' : 'S'} &nbsp;
-                         {Math.abs(selLoc.lon).toFixed(4)}°{selLoc.lon >= 0 ? 'E' : 'W'}
+                {Math.abs(selLoc.lon).toFixed(4)}°{selLoc.lon >= 0 ? 'E' : 'W'}
                 &nbsp;· &nbsp;{selLoc.name}
               </div>
             )}
@@ -894,7 +1197,7 @@ export default function ObservatoryPage() {
                 transition: 'all 0.2s',
               }}
               onMouseOver={e => { e.currentTarget.style.borderColor = 'rgba(255,255,255,0.25)'; e.currentTarget.style.color = 'rgba(255,255,255,0.7)'; }}
-              onMouseOut={e  => { e.currentTarget.style.borderColor = 'rgba(255,255,255,0.1)';  e.currentTarget.style.color = 'rgba(255,255,255,0.4)'; }}
+              onMouseOut={e => { e.currentTarget.style.borderColor = 'rgba(255,255,255,0.1)'; e.currentTarget.style.color = 'rgba(255,255,255,0.4)'; }}
             >
               ⊕ &nbsp;USE MY LOCATION
             </button>
@@ -917,7 +1220,7 @@ export default function ObservatoryPage() {
                 boxShadow: selLoc ? '0 8px 28px rgba(0,150,255,0.35)' : 'none',
               }}
               onMouseOver={e => selLoc && (e.currentTarget.style.boxShadow = '0 12px 36px rgba(0,150,255,0.5)')}
-              onMouseOut={e  => selLoc && (e.currentTarget.style.boxShadow = '0 8px 28px rgba(0,150,255,0.35)')}
+              onMouseOut={e => selLoc && (e.currentTarget.style.boxShadow = '0 8px 28px rgba(0,150,255,0.35)')}
             >
               OPEN OBSERVATORY
             </button>
@@ -991,12 +1294,26 @@ export default function ObservatoryPage() {
             boxShadow: '0 16px 40px rgba(0,0,0,0.6)',
           }}>
             {/* Layer toggles */}
-            <ToolBtn active={showSat}    onClick={() => setShowSat(!showSat)}       icon="🛰"  label="Satellites"     accent="#00d4ff" />
-            <ToolBtn active={showPlanet} onClick={() => setShowPlanet(!showPlanet)} icon="🪐"  label="Planets"        accent="#ffd166" />
-            <ToolBtn active={showConst}  onClick={() => { setShowConst(!showConst); if (constGroupRef.current) constGroupRef.current.clear(); }} icon="⭐" label="Constellations" accent="#9b7cff" />
-            <ToolBtn active={showGround} onClick={() => setShowGround(!showGround)} icon="⛰"  label="Ground"         accent="#44bb88" />
-            <ToolBtn active={showAtm}    onClick={() => setShowAtm(!showAtm)}       icon="🌫"  label="Atmosphere"     accent="#4488ff" />
-            <ToolBtn active={showGrid}   onClick={() => setShowGrid(!showGrid)}     icon="⊞"  label="Grid"           accent="#888888" />
+            <ToolBtn active={showSat} onClick={() => setShowSat(!showSat)} icon="🛰" label="Satellites" accent="#00d4ff" />
+            <ToolBtn active={showPlanet} onClick={() => setShowPlanet(!showPlanet)} icon="🪐" label="Planets" accent="#ffd166" />
+            <ToolBtn
+              active={showConst}
+              onClick={() => {
+                setShowConst(prev => {
+                  const next = !prev;
+                  // Clear or rebuild immediately
+                  if (!next && constGroupRef.current) {
+                    while (constGroupRef.current.children.length > 0)
+                      constGroupRef.current.remove(constGroupRef.current.children[0]);
+                  }
+                  return next;
+                });
+              }}
+              icon="⭐" label="Constellations" accent="#9b7cff"
+            />
+            <ToolBtn active={showGround} onClick={() => setShowGround(!showGround)} icon="⛰" label="Ground" accent="#44bb88" />
+            <ToolBtn active={showAtm} onClick={() => setShowAtm(!showAtm)} icon="🌫" label="Atmosphere" accent="#4488ff" />
+            <ToolBtn active={showGrid} onClick={() => setShowGrid(!showGrid)} icon="⊞" label="Grid" accent="#888888" />
 
             {/* Divider */}
             <div style={{ width: 0.5, height: 32, background: 'rgba(255,255,255,0.1)', margin: '0 4px' }} />
@@ -1034,7 +1351,7 @@ export default function ObservatoryPage() {
                 transition: 'all 0.2s',
               }}
               onMouseOver={e => { e.currentTarget.style.color = '#fff'; e.currentTarget.style.borderColor = 'rgba(0,212,255,0.4)'; }}
-              onMouseOut={e  => { e.currentTarget.style.color = 'rgba(200,215,255,0.5)'; e.currentTarget.style.borderColor = 'rgba(255,255,255,0.1)'; }}
+              onMouseOut={e => { e.currentTarget.style.color = 'rgba(200,215,255,0.5)'; e.currentTarget.style.borderColor = 'rgba(255,255,255,0.1)'; }}
             >
               ⟳ &nbsp;CHANGE LOCATION
             </button>
@@ -1054,7 +1371,7 @@ export default function ObservatoryPage() {
                 transition: 'all 0.2s',
               }}
               onMouseOver={e => { e.currentTarget.style.borderColor = 'rgba(0,212,255,0.6)'; e.currentTarget.style.color = '#00d4ff'; }}
-              onMouseOut={e  => { e.currentTarget.style.borderColor = 'rgba(0,212,255,0.2)'; e.currentTarget.style.color = 'rgba(0,212,255,0.7)'; }}
+              onMouseOut={e => { e.currentTarget.style.borderColor = 'rgba(0,212,255,0.2)'; e.currentTarget.style.color = 'rgba(0,212,255,0.7)'; }}
             >
               🌍 &nbsp;GLOBE TRACKER
             </button>
