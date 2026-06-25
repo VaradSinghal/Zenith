@@ -123,6 +123,10 @@ export default function ObservatoryPage() {
   const [tles, setTles] = useState<SatelliteRecord[]>([]);
   const [constReady, setConstReady] = useState(false);
   const [selectedSat, setSelectedSat] = useState<OverheadObject | null>(null);
+  const [briefing, setBriefing]               = useState<string>('');
+  const [briefingLoading, setBriefingLoading] = useState(false);
+  const [briefingVisible, setBriefingVisible] = useState(false);
+  const cachedOverheadRef = useRef<ReturnType<typeof propagateAll>>([]);
 
   /* ── Refs that mirror the latest state for use inside the render loop.
         The loop is created once per `phase` change and keeps running via
@@ -669,6 +673,7 @@ export default function ObservatoryPage() {
           // Pre-compute all to allow selected satellite to be visible below horizon
           cachedOverhead = propagateAll(tlesRef.current, obs, now);
           lastSatCalc = t;
+          cachedOverheadRef.current = cachedOverhead;
         }
 
         const pulseMag = 0.5 + 0.5 * Math.sin(t * 0.004);  // 0→1 pulse
@@ -1071,6 +1076,37 @@ export default function ObservatoryPage() {
     };
   }
 
+  const fetchBriefing = async () => {
+    setBriefingLoading(true);
+    setBriefingVisible(true);
+    setBriefing('');
+    try {
+      const overhead = cachedOverheadRef.current.filter(s => s.el > 0).slice(0, 8);
+      const planets  = getPlanetPositions(
+        { lat: observer.lat, lon: observer.lon },
+        new Date(simTimeRef.current)
+      );
+      const res = await fetch('/api/briefing', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          observer: { lat: observer.lat, lon: observer.lon },
+          overhead,
+          planets,
+          date: simTimeRef.current,
+          issNextPass: null,
+        }),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      setBriefing(data.text || 'No briefing available.');
+    } catch {
+      setBriefing('Unable to generate briefing. Check GEMINI_API_KEY in .env.local');
+    } finally {
+      setBriefingLoading(false);
+    }
+  };
+
   /* ═══════════════════════════════════════════════════════════════
      JSX
      ═══════════════════════════════════════════════════════════════ */
@@ -1157,6 +1193,10 @@ export default function ObservatoryPage() {
             @keyframes twinkle {
               0%,100% { opacity: 0.1; }
               50%      { opacity: 0.8; }
+            }
+            @keyframes spin {
+              from { transform: rotate(0deg); }
+              to   { transform: rotate(360deg); }
             }
             @keyframes fadeUp {
               from { opacity:0; transform:translateY(16px); }
@@ -1491,7 +1531,88 @@ export default function ObservatoryPage() {
             <button onClick={() => { setTimeOffset(0); setPlaying(true); }} style={tinyBtnStyle}>NOW</button>
             <button onClick={() => setTimeOffset(to => to + 10)} style={tinyBtnStyle}>+10m</button>
             <button onClick={() => setTimeOffset(to => to + 60)} style={tinyBtnStyle}>+1h</button>
+            <div style={{ width:0.5, height:32, background:'rgba(255,255,255,0.1)', margin:'0 4px' }} />
+            <button
+              onClick={() => briefingVisible && briefing ? setBriefingVisible(false) : fetchBriefing()}
+              title="AI Sky Briefing (Gemini)"
+              style={{
+                ...tinyBtnStyle,
+                background: briefingVisible
+                  ? 'linear-gradient(135deg,rgba(66,133,244,0.22),rgba(234,67,53,0.12))'
+                  : 'rgba(255,255,255,0.05)',
+                borderColor: briefingVisible ? 'rgba(66,133,244,0.5)' : 'rgba(255,255,255,0.1)',
+                color: briefingVisible ? '#7ab3ff' : 'rgba(255,255,255,0.55)',
+                minWidth: 48, display:'flex', alignItems:'center', justifyContent:'center', gap:4,
+              }}
+            >
+              <span style={{ fontSize:14 }}>✦</span>
+              <span style={{ fontSize:8, letterSpacing:'0.06em' }}>AI</span>
+            </button>
           </div>
+
+          {/* ── AI BRIEFING PANEL ── */}
+          {briefingVisible && (
+            <div style={{
+              position: 'absolute', bottom: 90, left: '50%',
+              transform: 'translateX(-50%)',
+              width: 520, maxWidth: 'calc(100vw - 40px)',
+              pointerEvents: 'auto', zIndex: 20,
+              background: 'rgba(4,8,24,0.92)',
+              backdropFilter: 'blur(28px)',
+              border: '0.5px solid rgba(0,212,255,0.2)',
+              borderRadius: 16, padding: '18px 20px 16px',
+              boxShadow: '0 20px 60px rgba(0,0,0,0.7), 0 0 0 0.5px rgba(0,212,255,0.06)',
+            }}>
+              <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:12 }}>
+                <div style={{ display:'flex', alignItems:'center', gap:8 }}>
+                  <div style={{
+                    width:22, height:22,
+                    background:'linear-gradient(135deg,#4285F4,#EA4335,#FBBC04,#34A853)',
+                    borderRadius:'50%', display:'flex', alignItems:'center',
+                    justifyContent:'center', fontSize:11, flexShrink:0, color:'#fff', fontWeight:700,
+                  }}>✦</div>
+                  <span style={{ fontSize:10, color:'rgba(0,212,255,0.8)', letterSpacing:'0.18em', textTransform:'uppercase' }}>
+                    Sky Briefing · Gemini
+                  </span>
+                  {briefingLoading && (
+                    <span style={{ fontSize:9, color:'rgba(255,255,255,0.35)', letterSpacing:'0.12em' }}>
+                      GENERATING…
+                    </span>
+                  )}
+                </div>
+                <div style={{ display:'flex', gap:6 }}>
+                  <button onClick={fetchBriefing} disabled={briefingLoading} title="Regenerate"
+                    style={{ background:'transparent', border:'0.5px solid rgba(255,255,255,0.1)',
+                      borderRadius:6, color:'rgba(255,255,255,0.4)', cursor: briefingLoading ? 'not-allowed' : 'pointer',
+                      fontSize:14, width:26, height:26, display:'flex', alignItems:'center', justifyContent:'center' }}>
+                    ↺
+                  </button>
+                  <button onClick={() => setBriefingVisible(false)}
+                    style={{ background:'transparent', border:'0.5px solid rgba(255,255,255,0.1)',
+                      borderRadius:6, color:'rgba(255,255,255,0.4)', cursor:'pointer',
+                      fontSize:16, width:26, height:26, display:'flex', alignItems:'center', justifyContent:'center' }}>
+                    ×
+                  </button>
+                </div>
+              </div>
+              <div style={{ height:'0.5px', background:'rgba(0,212,255,0.12)', marginBottom:12 }} />
+              <div style={{
+                fontSize:13, lineHeight:1.8, minHeight:64, letterSpacing:'0.02em',
+                color: briefingLoading ? 'rgba(255,255,255,0.3)' : 'rgba(220,235,255,0.9)',
+              }}>
+                {briefingLoading ? 'Scanning the heavens above you…' : briefing || ' '}
+              </div>
+              {!briefingLoading && briefing && (
+                <div style={{ marginTop:12, paddingTop:10, borderTop:'0.5px solid rgba(255,255,255,0.05)',
+                  display:'flex', justifyContent:'space-between' }}>
+                  <span style={{ fontSize:9, color:'rgba(0,212,255,0.4)', letterSpacing:'0.1em' }}>
+                    📍 {selLoc?.name || `${observer.lat.toFixed(2)}°, ${observer.lon.toFixed(2)}°`}
+                  </span>
+                  <span style={{ fontSize:9, color:'rgba(255,255,255,0.2)' }}>{dispTime}</span>
+                </div>
+              )}
+            </div>
+          )}
 
           {/* ── BOTTOM-LEFT: Change location ── */}
           <div style={{ position: 'absolute', bottom: 24, left: 20, pointerEvents: 'auto' }}>
