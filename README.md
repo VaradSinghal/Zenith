@@ -10,7 +10,7 @@
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.x-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
 [![License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-**[🚀 Live Demo](https://zenith-six-eta.vercel.app)** · **[📖 Documentation](#architecture)** · **[🏆 AARUUSH '26](#competition-context)**
+**[🚀 Live Demo](https://zenith-celestial-eye.vercel.app/landing)** · **[📖 Documentation](#technical-documentation)** · **[🏆 AARUUSH '26](#competition-context)**
 
 </div>
 
@@ -18,16 +18,586 @@
 
 ## 📋 Table of Contents
 
-- [Overview](#overview)
-- [Features](#-features)
-- [Tech Stack](#-tech-stack)
+- [Technical Documentation](#technical-documentation)
+  - [System Requirements](#system-requirements)
+  - [Installation and Setup](#installation-and-setup)
+  - [Development Workflow](#development-workflow)
+  - [Production Deployment](#production-deployment)
+  - [Troubleshooting](#troubleshooting)
+- [Website Functionality and Unique Features](#website-functionality-and-unique-features)
+- [Dependencies](#dependencies)
 - [Architecture](#-architecture)
-- [Getting Started](#-getting-started)
 - [Environment Variables](#-environment-variables)
 - [API Sources](#-api-sources)
 - [How the Math Works](#-how-the-math-works)
 - [Known Limitations](#-known-limitations)
 - [Competition Context](#-competition-context)
+
+---
+
+## Technical Documentation
+
+### System Requirements
+
+Before installing Project Zenith, ensure your system meets the following minimum requirements:
+
+**Hardware:**
+- **RAM:** 4GB minimum (8GB recommended for optimal performance)
+- **Storage:** 500MB free disk space for dependencies and build artifacts
+- **Processor:** Any modern CPU with JavaScript execution support
+
+**Software:**
+- **Node.js:** Version 18.x or higher (LTS version recommended)
+- **npm:** Version 9.x or higher (comes bundled with Node.js)
+- **Operating System:** Windows 10+, macOS 10.15+, or Linux (Ubuntu 20.04+)
+- **Browser:** Chrome 90+, Firefox 88+, Safari 14+, or Edge 90+ (for development)
+
+**Optional Tools:**
+- **Git:** For cloning the repository (if not downloading as ZIP)
+- **VS Code or similar IDE:** Recommended for development with TypeScript support
+
+### Installation and Setup
+
+Follow these step-by-step instructions to set up Project Zenith on your local machine:
+
+#### Step 1: Clone the Repository
+
+```bash
+# Using Git (recommended)
+git clone https://github.com/VaradSinghal/Zenith.git
+cd Zenith
+
+# Alternatively, download as ZIP from GitHub and extract
+```
+
+#### Step 2: Install Dependencies
+
+```bash
+# Install all required packages
+npm install
+
+# This will install:
+# - Next.js framework and React
+# - TypeScript and type definitions
+# - Tailwind CSS and PostCSS
+# - astronomy-engine for planet calculations
+# - satellite.js for orbital mechanics
+# - Leaflet for interactive maps
+# - Lucide React for icons
+# - Three.js for 3D rendering
+```
+
+The installation process typically takes 2-5 minutes depending on your internet connection.
+
+#### Step 3: Configure Environment Variables
+
+Create a `.env.local` file in the project root directory:
+
+```bash
+# Create the environment file
+touch .env.local  # On macOS/Linux
+# or
+echo. > .env.local  # On Windows
+```
+
+Add the following content to `.env.local`:
+
+```env
+# Optional — enables the AI sky briefing feature
+GEMINI_API_KEY=your_google_ai_api_key_here
+```
+
+**Note:** The `GEMINI_API_KEY` is optional. All core features work without it. To obtain a Google AI API key:
+1. Visit [Google AI Studio](https://makersuite.google.com/app/apikey)
+2. Create a new API key
+3. Add it to your `.env.local` file
+
+#### Step 4: Start Development Server
+
+```bash
+# Start the development server with hot-reload
+npm run dev
+```
+
+The application will be available at **http://localhost:3000**
+
+You should see output similar to:
+```
+  ▲ Next.js 14.2.35
+  - Local:        http://localhost:3000
+  - Environments: .env.local
+  Ready in 2.3s
+```
+
+#### Step 5: Verify Installation
+
+Open your browser and navigate to `http://localhost:3000`. You should see:
+- The Project Zenith landing page
+- Interactive sky dome with satellite positions
+- Observer map with default location
+- All UI components rendering correctly
+
+### Development Workflow
+
+#### Available Scripts
+
+```bash
+# Development
+npm run dev          # Start development server with hot-reload
+npm run build        # Create production build
+npm run start        # Start production server
+npm run lint         # Run ESLint for code quality checks
+```
+
+#### Project Structure
+
+```
+project-zenith/
+├── app/                    # Next.js App Router pages
+│   ├── api/               # API routes for external data fetching
+│   ├── landing/           # Landing page
+│   ├── observatory/       # Main observatory interface
+│   ├── globe/             # 3D globe visualization
+│   └── layout.tsx         # Root layout
+├── components/            # Reusable React components
+│   ├── ObserverMap/       # Leaflet map component
+│   ├── SkyDome/           # Canvas sky dome renderer
+│   └── InfoPanel/         # Information display panel
+├── lib/                   # Utility functions and helpers
+│   ├── propagate.ts       # SGP4 orbital propagation logic
+│   ├── planets.ts         # Planet position calculations
+│   └── constellations.ts  # Constellation data and rendering
+├── public/                # Static assets
+├── package.json           # Project dependencies
+├── tsconfig.json          # TypeScript configuration
+├── tailwind.config.ts     # Tailwind CSS configuration
+└── next.config.mjs        # Next.js configuration
+```
+
+#### Code Quality
+
+The project uses ESLint for code quality enforcement:
+
+```bash
+# Run linter
+npm run lint
+
+# Fix auto-fixable issues
+npm run lint -- --fix
+```
+
+TypeScript is configured with strict mode for type safety.
+
+### Production Deployment
+
+#### Building for Production
+
+```bash
+# Create optimized production build
+npm run build
+
+# The build process:
+# 1. Compiles TypeScript to JavaScript
+# 2. Optimizes React components
+# 3. Generates static pages where possible
+# 4. Creates serverless function bundles
+# 5. Minifies CSS and JavaScript
+```
+
+#### Running Production Server
+
+```bash
+# Start production server
+npm start
+
+# The app will run on port 3000 by default
+# To use a different port:
+PORT=8080 npm start
+```
+
+#### Deployment Platforms
+
+**Vercel (Recommended):**
+```bash
+# Install Vercel CLI
+npm i -g vercel
+
+# Deploy
+vercel
+```
+
+**Other Platforms:**
+- **Netlify:** Connect Git repository and use Next.js build settings
+- **Docker:** Use the included Dockerfile (if available)
+- **VPS:** Build locally and serve with Node.js process manager (PM2)
+
+#### Environment Variables in Production
+
+Set environment variables in your deployment platform's dashboard:
+
+- **Vercel:** Project Settings → Environment Variables
+- **Netlify:** Site Settings → Environment Variables
+- **Docker:** Pass as `-e GEMINI_API_KEY=your_key` during container run
+
+### Troubleshooting
+
+#### Common Issues and Solutions
+
+**Issue: "Module not found" errors after installation**
+```bash
+# Solution: Clear cache and reinstall
+rm -rf node_modules package-lock.json
+npm install
+```
+
+**Issue: Port 3000 already in use**
+```bash
+# Solution: Use a different port
+npm run dev -- -p 3001
+```
+
+**Issue: TypeScript compilation errors**
+```bash
+# Solution: Clear TypeScript build cache
+rm -rf .next
+npm run dev
+```
+
+**Issue: Satellite data not loading**
+- Check your internet connection
+- Verify CelesTrak API is accessible (https://celestrak.org)
+- Check browser console for CORS errors
+- The fallback system will use hardcoded TLEs if APIs fail
+
+**Issue: AI briefing not working**
+- Verify `GEMINI_API_KEY` is set in `.env.local`
+- Restart development server after adding API key
+- Check Google AI API quota and billing status
+
+**Issue: Map not displaying correctly**
+- Ensure Leaflet CSS is loaded
+- Check browser console for tile loading errors
+- Verify internet connection for map tiles
+
+#### Performance Optimization
+
+If experiencing slow performance:
+1. Reduce the number of satellites displayed (modify TLE fetch groups)
+2. Lower canvas rendering resolution
+3. Disable constellation overlays
+4. Use a modern browser with hardware acceleration
+
+#### Getting Help
+
+- **GitHub Issues:** Report bugs at https://github.com/VaradSinghal/Zenith/issues
+- **Documentation:** Check inline code comments for detailed explanations
+- **API Documentation:** Refer to upstream API documentation for data sources
+
+---
+
+## Website Functionality and Unique Features
+
+Project Zenith is a comprehensive astronomical observatory that transforms any web browser into a powerful satellite tracking and sky visualization platform. Below are the key functionalities and unique features that distinguish it from other astronomical tools.
+
+### Core Functionality
+
+#### Real-Time Satellite Tracking
+- **Live Orbital Propagation:** Uses SGP4/SDP4 algorithms (the same as NORAD) to calculate satellite positions from Two-Line Element (TLE) data
+- **4,000+ Satellites:** Tracks active satellites across 5 categories: Space Stations, Visual Satellites, Starlink constellation, GPS satellites, and Weather satellites
+- **Automatic Updates:** Fetches fresh TLE data from CelesTrak on every page load for maximum accuracy
+- **Fallback System:** Includes 12 hardcoded TLEs (ISS, Hubble, Tiangong, Starlinks, GPS, NOAA) for offline resilience
+
+#### Interactive Sky Dome Visualization
+- **Azimuthal Equidistant Projection:** Standard astronomical projection that maps the sky onto a hemispherical dome
+- **Real-Time Rendering:** Canvas-based rendering at ~10 fps for smooth animation
+- **Observer-Centric View:** Sky dome adjusts based on your geographic location and time
+- **Time Travel:** Slider allows exploring sky states ±120 minutes from current time
+
+#### Geographic Positioning
+- **Interactive Observer Map:** Leaflet-based map to set your observation location
+- **City Search:** Search for any city worldwide with geocoding via Nominatim
+- **ISS Quick-Select:** Special keyword "ISS" to instantly set observer to ISS position
+- **Click-to-Set:** Click anywhere on the map to set observer coordinates
+- **ISS Ground Track:** Real-time marker showing ISS current position over Earth
+
+### Unique Features
+
+#### 1. Unified Sky Observatory
+Unlike most tools that focus on either satellites OR planets OR stars, Zenith combines all astronomical objects into a single interface:
+- Satellites with orbital paths
+- Planets (Sun, Moon, Mercury through Neptune)
+- 88 IAU constellations with stick-figure overlays
+- Procedurally generated background stars with twinkling
+- Aurora visibility bands when geomagnetic activity is high
+
+#### 2. AI-Powered Sky Briefings
+- **Natural Language Summaries:** Gemini 2.5 Flash generates human-readable sky-watching guides
+- **Context-Aware:** Briefings are based on your location, time, and current sky conditions
+- **Real-Time Data:** Incorporates live satellite passes, planet positions, and aurora forecasts
+- **Educational Value:** Transforms raw telemetry into accessible astronomy content
+
+#### 3. Advanced Pass Predictions
+- **Next-Pass Detection:** Automatically calculates when satellites will rise above your horizon
+- **AOS/LOS Timing:** Precise Acquisition of Signal and Loss of Signal times
+- **Maximum Elevation:** Shows the highest point in the satellite's path
+- **Live Countdown:** Real-time HH:MM:SS countdown to next pass
+- **Visual Path Arcs:** Dashed lines show future trajectory, solid lines show past trail
+
+#### 4. ISS-Specific Features
+- **Live Crew Data:** Real-time astronaut roster from Open Notify
+- **Flag Emojis:** International representation with country flags
+- **Days in Space:** Tracks how long each crew member has been aboard
+- **Expedition Context:** Hardcoded launch dates for Expedition 71/72 crew
+- **Special Visualization:** ISS marked with distinctive icon and ground track
+
+#### 5. Aurora Monitoring
+- **Kp-Index Tracking:** Real-time geomagnetic activity from NOAA SWPC
+- **Aurora Band Overlay:** Visual indication when aurora may be visible (Kp ≥ 5)
+- **High-Latitude Focus:** Optimized for observers at northern latitudes
+- **Automatic Updates:** Refreshes every 15 minutes
+
+#### 6. Mobile-First Design
+- **Responsive Layout:** Adapts seamlessly from desktop to mobile
+- **Bottom Tab Navigation:** Touch-optimized navigation bar
+- **Swipeable Panels:** Intuitive gesture controls
+- **Bottom-Sheet Info Panel:** Modern mobile UI pattern for details
+- **Touch-Friendly Interactions:** Optimized tap targets and gestures
+
+#### 7. Zero-Configuration Operation
+- **No API Keys Required:** Core features work out of the box using free public APIs
+- **Server-Side Proxying:** Next.js API routes handle CORS and headers automatically
+- **Graceful Degradation:** Fallback systems ensure functionality even when APIs are down
+- **Instant Setup:** Clone, install, run — no complex configuration needed
+
+#### 8. Educational Value
+- **Orbital Mechanics Visualization:** See how satellites actually move in real-time
+- **Coordinate Systems:** Learn about azimuth, elevation, RA, Dec coordinate systems
+- **Constellation Identification:** Interactive constellation overlays help learn the night sky
+- **Planet Tracking:** Understand solar system body positions relative to Earth
+- **Real-World Data:** Uses actual NORAD TLE data, not simulations
+
+### Technical Distinctions
+
+#### Performance Optimization
+- **Canvas Rendering:** Uses HTML5 Canvas 2D for efficient rendering of thousands of objects
+- **Tier Filtering:** Limits rendered objects based on visibility and importance
+- **Seeded PRNG:** Reproducible star field generation without storing thousands of coordinates
+- **Efficient Math:** Optimized coordinate transformations for real-time performance
+
+#### Accuracy and Precision
+- **SGP4/SDP4 Standard:** Uses the same propagation algorithms as NORAD
+- **VSOP87 Theory:** Planet positions calculated with ~1 arcminute precision
+- **Real-Time Data:** Fresh TLEs on every load for maximum positional accuracy
+- **Proper Coordinate Transforms:** Accurate equatorial-to-horizontal conversions
+
+#### Resilience
+- **Multiple Data Sources:** Redundant APIs for critical data
+- **Fallback Systems:** Hardcoded data ensures basic functionality during outages
+- **Error Handling:** Graceful degradation when external services fail
+- **Offline Capability:** Core features work without internet connection using cached data
+
+---
+
+## Dependencies
+
+Project Zenith requires several external libraries, frameworks, and tools to function. Below is a comprehensive list organized by category.
+
+### Core Framework Dependencies
+
+#### Next.js 14.2.35
+- **Purpose:** React framework for server-side rendering and API routes
+- **Features Used:** App Router, API routes, server-side rendering, static optimization
+- **License:** MIT
+- **Documentation:** https://nextjs.org/docs
+
+#### React 18
+- **Purpose:** UI library for building interactive components
+- **Features Used:** Hooks, component lifecycle, state management
+- **License:** MIT
+- **Documentation:** https://react.dev
+
+#### React DOM 18
+- **Purpose:** React renderer for web browsers
+- **Features Used:** DOM manipulation, event handling
+- **License:** MIT
+- **Documentation:** https://react.dev/reference/react-dom
+
+### Language and Type Safety
+
+#### TypeScript 5
+- **Purpose:** Static type checking for JavaScript
+- **Features Used:** Strict mode, type inference, interface definitions
+- **License:** Apache 2.0
+- **Documentation:** https://www.typescriptlang.org/docs
+
+#### Type Definitions
+- **@types/node:** TypeScript definitions for Node.js runtime
+- **@types/react:** TypeScript definitions for React
+- **@types/react-dom:** TypeScript definitions for React DOM
+- **@types/leaflet:** TypeScript definitions for Leaflet map library
+- **@types/three:** TypeScript definitions for Three.js 3D library
+
+### Styling and UI
+
+#### Tailwind CSS 3.4.1
+- **Purpose:** Utility-first CSS framework for rapid UI development
+- **Features Used:** Responsive design, dark mode, utility classes
+- **License:** MIT
+- **Documentation:** https://tailwindcss.com/docs
+
+#### PostCSS 8
+- **Purpose:** CSS transformation tool
+- **Features Used:** CSS processing, plugin system
+- **License:** MIT
+- **Documentation:** https://postcss.org
+
+#### Lucide React 1.21.0
+- **Purpose:** Lightweight icon library
+- **Features Used:** SVG icons for UI elements (satellite, map, info, etc.)
+- **License:** ISC
+- **Documentation:** https://lucide.dev
+
+### Orbital Mechanics and Astronomy
+
+#### satellite.js 4.1.4
+- **Purpose:** SGP4/SDP4 orbital propagation algorithms
+- **Features Used:** TLE parsing, satellite position calculation, coordinate transforms
+- **License:** MIT
+- **Documentation:** https://github.com/shashwatak/satellite.js
+
+#### astronomy-engine 2.1.19
+- **Purpose:** Astronomical calculations and planet positions
+- **Features Used:** VSOP87 theory, planet positions, Sun/Moon calculations
+- **License:** MIT
+- **Documentation:** https://github.com/cosinekitty/astronomy-engine
+
+### Mapping and Visualization
+
+#### Leaflet 1.9.4
+- **Purpose:** Interactive map library
+- **Features Used:** Observer map, tile layers, markers, geocoding integration
+- **License:** BSD-2-Clause
+- **Documentation:** https://leafletjs.com/reference.html
+
+#### Three.js 0.184.0
+- **Purpose:** 3D graphics library
+- **Features Used:** 3D globe visualization (optional feature)
+- **License:** MIT
+- **Documentation:** https://threejs.org/docs
+
+### Development Tools
+
+#### ESLint 8
+- **Purpose:** JavaScript/TypeScript linting and code quality
+- **Features Used:** Code style enforcement, error detection
+- **License:** MIT
+- **Documentation:** https://eslint.org/docs/latest
+
+#### ESLint Config Next.js 14.2.35
+- **Purpose:** Next.js-specific ESLint configuration
+- **Features Used:** React hooks rules, Next.js best practices
+- **License:** MIT
+- **Documentation:** Included in Next.js
+
+### External API Services (Runtime Dependencies)
+
+#### CelesTrak (celestrak.org)
+- **Purpose:** NORAD Two-Line Element (TLE) data source
+- **Data:** Satellite orbital elements for 4,000+ satellites
+- **Access:** Free public API, no authentication required
+- **Rate Limit:** On page load (cached)
+- **Documentation:** https://celestrak.org/NORAD/elements/
+
+#### Open Notify (open-notify.org)
+- **Purpose:** ISS position and crew data
+- **Data:** Real-time ISS coordinates, astronaut roster
+- **Access:** Free public API, no authentication required
+- **Rate Limit:** Every 5 seconds for position, on demand for crew
+- **Documentation:** http://open-notify.org/Open-Notify-API/
+
+#### NOAA SWPC (swpc.noaa.gov)
+- **Purpose:** Geomagnetic activity and aurora data
+- **Data:** Planetary Kp-index for aurora visibility
+- **Access:** Free public API, no authentication required
+- **Rate Limit:** Every 15 minutes
+- **Documentation:** https://www.swpc.noaa.gov/products/planetary-k-index
+
+#### Nominatim (nominatim.openstreetmap.org)
+- **Purpose:** OpenStreetMap geocoding service
+- **Data:** City name to latitude/longitude conversion
+- **Access:** Free public API, requires User-Agent header
+- **Rate Limit:** On user search (proxied through Next.js)
+- **Documentation:** https://nominatim.openstreetmap.org/
+
+#### Google AI (generativelanguage.googleapis.com)
+- **Purpose:** AI-powered sky briefings (optional)
+- **Data:** Natural language generation via Gemini 2.5 Flash
+- **Access:** Requires API key (optional feature)
+- **Rate Limit:** On user request
+- **Documentation:** https://ai.google.dev/docs
+
+### System Requirements (Runtime)
+
+#### Node.js Runtime
+- **Version:** 18.x or higher (LTS recommended)
+- **Purpose:** JavaScript runtime for server-side execution
+- **Download:** https://nodejs.org/
+
+#### Package Manager
+- **npm:** 9.x or higher (bundled with Node.js)
+- **Alternatives:** yarn 1.22+, pnpm 8.x+
+- **Purpose:** Dependency management and script execution
+
+### Browser Requirements (Client-Side)
+
+#### Modern Web Browser
+- **Chrome:** 90+ (recommended)
+- **Firefox:** 88+
+- **Safari:** 14+
+- **Edge:** 90+
+- **Required Features:** ES6+, Canvas 2D, Fetch API, Web Workers
+
+### Optional Dependencies
+
+#### Git
+- **Purpose:** Version control for cloning repository
+- **Version:** Any recent version
+- **Required:** Only for cloning from GitHub
+
+#### IDE/Code Editor
+- **Recommended:** VS Code with TypeScript extension
+- **Alternatives:** WebStorm, Sublime Text, Atom
+- **Purpose:** Development environment with syntax highlighting
+
+### Dependency Tree Summary
+
+```
+project-zenith
+├── next (14.2.35)
+│   ├── react (18)
+│   ├── react-dom (18)
+│   └── @types/* (various)
+├── typescript (5)
+├── tailwindcss (3.4.1)
+│   └── postcss (8)
+├── lucide-react (1.21.0)
+├── satellite.js (4.1.4)
+├── astronomy-engine (2.1.19)
+├── leaflet (1.9.4)
+│   └── @types/leaflet
+├── three (0.184.0)
+│   └── @types/three
+└── eslint (8)
+    └── eslint-config-next (14.2.35)
+```
+
+### Security Considerations
+
+All dependencies are sourced from npm registry and are regularly updated. The project uses:
+- **No known vulnerabilities** in current dependency versions
+- **MIT or permissive licenses** for all dependencies
+- **Minimal external API calls** (all proxied through Next.js)
+- **No sensitive data storage** (API keys in environment variables only)
 
 ---
 
