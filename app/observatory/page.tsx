@@ -1512,25 +1512,7 @@ export default function ObservatoryPage() {
             </button>
           </div>
 
-          {/* ── BOTTOM-RIGHT: Globe nav ── */}
-          <div style={{ position: 'absolute', bottom: 24, right: 20, pointerEvents: 'auto' }}>
-            <button
-              onClick={() => router.push('/globe')}
-              style={{
-                background: 'rgba(4,8,24,0.8)', backdropFilter: 'blur(16px)',
-                border: '0.5px solid rgba(0,212,255,0.2)',
-                borderRadius: 10, padding: '8px 14px',
-                color: 'rgba(0,212,255,0.7)', fontSize: 10,
-                cursor: 'pointer', letterSpacing: '0.1em',
-                display: 'flex', alignItems: 'center', gap: 6,
-                transition: 'all 0.2s',
-              }}
-              onMouseOver={e => { e.currentTarget.style.borderColor = 'rgba(0,212,255,0.6)'; e.currentTarget.style.color = '#00d4ff'; }}
-              onMouseOut={e => { e.currentTarget.style.borderColor = 'rgba(0,212,255,0.2)'; e.currentTarget.style.color = 'rgba(0,212,255,0.7)'; }}
-            >
-              🌍 &nbsp;GLOBE TRACKER
-            </button>
-          </div>
+         
 
           {/* ── Time offset indicator ── */}
           {timeOffset !== 0 && (
