@@ -483,9 +483,7 @@ export default function LandingPage() {
           {/* BOTTOM LEFT */}
           <div className="absolute bottom-12 left-12 md:bottom-16 md:left-24 anim-stats pointer-events-auto flex items-center gap-12">
             <div className="flex flex-col gap-2">
-              <span className={`${inter.className} text-[18px] font-light text-white tracking-wide`}>
-                {tleCount !== null ? tleCount.toLocaleString() : '---'}
-              </span>
+              <span className={`${inter.className} text-[18px] font-light text-white tracking-wide`}>10,000+</span>
               <span className={`${inter.className} text-[10px] tracking-[0.2em] text-[#7d8187] uppercase`}>Satellites Tracked</span>
             </div>
 
@@ -542,7 +540,7 @@ export default function LandingPage() {
                 Real-Time Orbital Mechanics
               </h2>
               <p className={`${inter.className} text-[#7d8187] leading-[1.8] text-[16px] font-light max-w-xl`}>
-                Project Zenith doesn&apos;t rely on static data or artificial animations. It fetches live Two-Line Element (TLE) sets from NORAD and propagates the exact positions of over 4,000 active satellites using standard SGP4 orbital mathematical models directly in your browser.
+                Project Zenith doesn&apos;t rely on static data or artificial animations. It fetches live Two-Line Element (TLE) sets from NORAD and propagates the exact positions of over 10,000 active satellites using standard SGP4 orbital mathematical models directly in your browser.
               </p>
             </div>
 
