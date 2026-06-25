@@ -6,7 +6,7 @@ import { Space_Mono, Space_Grotesk } from 'next/font/google';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { getPlanetPositions } from '@/lib/planets';
-import { propagateAll, parseTLEBlock, SatelliteRecord } from '@/lib/propagate';
+import { propagateAll, parseTLEBlock, SatelliteRecord, computeSkyPath, OverheadObject } from '@/lib/propagate';
 import { buildConstellationLines3D, ConstellationLine3D } from '@/lib/constellations-3d';
 
 const spaceMono = Space_Mono({ weight: ['400', '700'], subsets: ['latin'] });
@@ -122,6 +122,7 @@ export default function ObservatoryPage() {
   /* ── Data ── */
   const [tles, setTles] = useState<SatelliteRecord[]>([]);
   const [constReady, setConstReady] = useState(false);
+  const [selectedSat, setSelectedSat] = useState<OverheadObject | null>(null);
 
   /* ── Refs that mirror the latest state for use inside the render loop.
         The loop is created once per `phase` change and keeps running via
@@ -140,6 +141,10 @@ export default function ObservatoryPage() {
   const timeOffsetRef = useRef(timeOffset);
   const observerRef = useRef(observer);
   const tlesRef = useRef<SatelliteRecord[]>(tles);
+  const selectedSatRef = useRef<OverheadObject | null>(selectedSat);
+  const drawnSatsRef = useRef<{s: OverheadObject, x: number, y: number}[]>([]);
+  const orbitPathRef = useRef<THREE.Vector3[]>([]);
+  const pointerDownPosRef = useRef<{x: number, y: number} | null>(null);
 
   showSatRef.current = showSat;
   showPlanetRef.current = showPlanet;
@@ -151,6 +156,7 @@ export default function ObservatoryPage() {
   timeOffsetRef.current = timeOffset;
   observerRef.current = observer;
   tlesRef.current = tles;
+  selectedSatRef.current = selectedSat;
 
   /* ── Three.js refs ── */
   const mountRef = useRef<HTMLDivElement>(null);
@@ -173,6 +179,20 @@ export default function ObservatoryPage() {
   const atmRef = useRef<THREE.Mesh | null>(null);
   const gridGroupRef = useRef<THREE.Group | null>(null);
   const milkyWayRef = useRef<THREE.Points | null>(null);
+
+  /* ─────────────────────────────────────────────────────────────────
+     Orbit Path Computation
+     ───────────────────────────────────────────────────────────────── */
+  useEffect(() => {
+    if (!selectedSat) {
+      orbitPathRef.current = [];
+      return;
+    }
+    // +/- 50 minutes from current time (100 mins total)
+    const start = new Date(Date.now() - 50 * 60000);
+    const path = computeSkyPath(selectedSat.satrec, observer, start, 60, 100);
+    orbitPathRef.current = path.map(p => horVec(p.az, p.el, 750));
+  }, [selectedSat, observer]);
 
   /* ─────────────────────────────────────────────────────────────────
      Fetch TLEs + stars once
@@ -473,49 +493,7 @@ export default function ObservatoryPage() {
     // (The old code built a brand-new Mesh+Geometry+Material per satellite
     // per frame and never disposed the previous ones — that GPU memory
     // leak is what was crashing the tab.)
-    const MAX_SATS = 8000;
-    const satPosArr = new Float32Array(MAX_SATS * 3);
-    const satColArr = new Float32Array(MAX_SATS * 3);
-    const satSizeArr = new Float32Array(MAX_SATS);
-    const satPosAttr = new THREE.BufferAttribute(satPosArr, 3);
-    const satColAttr = new THREE.BufferAttribute(satColArr, 3);
-    const satSizeAttr = new THREE.BufferAttribute(satSizeArr, 1);
-    satPosAttr.usage = THREE.DynamicDrawUsage;
-    satColAttr.usage = THREE.DynamicDrawUsage;
-    satSizeAttr.usage = THREE.DynamicDrawUsage;
-    const satGeo = new THREE.BufferGeometry();
-    satGeo.setAttribute('position', satPosAttr);
-    satGeo.setAttribute('satCol', satColAttr);
-    satGeo.setAttribute('size', satSizeAttr);
-    satGeo.setDrawRange(0, 0);
-    const satMat = new THREE.ShaderMaterial({
-      vertexShader: `
-        attribute float size;
-        attribute vec3  satCol;
-        varying   vec3  vSatCol;
-        void main() {
-          vSatCol = satCol;
-          vec4 mv = modelViewMatrix * vec4(position, 1.0);
-          gl_PointSize = size * (643.0/ -mv.z);
-          gl_Position  = projectionMatrix * mv;
-        }
-      `,
-      fragmentShader: `
-        varying vec3 vSatCol;
-        void main() {
-          float d = length(gl_PointCoord - 0.5);
-          if (d > 0.5) discard;
-          float a = smoothstep(0.5, 0.1, d);
-          gl_FragColor = vec4(vSatCol, a);
-        }
-      `,
-      transparent: true,
-      depthWrite: false,
-      blending: THREE.AdditiveBlending,
-    });
-    const satPoints = new THREE.Points(satGeo, satMat);
-    satPoints.frustumCulled = false;
-    satGroup.add(satPoints);
+    // (satGroup still exists for future use, just empty now)
 
     const planetGroup = new THREE.Group();
     scene.add(planetGroup);
@@ -688,87 +666,193 @@ export default function ObservatoryPage() {
       /* ── Satellites (AzEl, throttled propagation, pooled buffer) ── */
       if (showSatRef.current && tlesRef.current.length > 0) {
         if (t - lastSatCalc > SAT_UPDATE_MS) {
-          cachedOverhead = propagateAll(tlesRef.current, obs, now).filter(s => s.el > 0);
+          // Pre-compute all to allow selected satellite to be visible below horizon
+          cachedOverhead = propagateAll(tlesRef.current, obs, now);
           lastSatCalc = t;
-          console.log(`[SAT] overhead: ${cachedOverhead.length}, tles loaded: ${tlesRef.current.length}`);
         }
-        const count = Math.min(cachedOverhead.length, MAX_SATS);
-        for (let i = 0; i < count; i++) {
-          const s = cachedOverhead[i];
-          const pos = horVec(s.az, s.el, 750);
-          satPosArr[i * 3] = pos.x;
-          satPosArr[i * 3 + 1] = pos.y;
-          satPosArr[i * 3 + 2] = pos.z;
 
-          const isISS = s.type === 'iss';
-          let r = 0.53, g = 0.80, b = 1.00;            // default 0x88ccff
-          if (isISS) { r = 0.00; g = 1.00; b = 0.53; } // 0x00ff88
-          else if (s.type === 'starlink') { r = 0.27; g = 0.53; b = 1.00; } // 0x4488ff
-          satColArr[i * 3] = r; satColArr[i * 3 + 1] = g; satColArr[i * 3 + 2] = b;
-          satSizeArr[i] = isISS ? 9 : s.tier === 'naked' ? 6 : 3;
+        const pulseMag = 0.5 + 0.5 * Math.sin(t * 0.004);  // 0→1 pulse
+        drawnSatsRef.current = [];
 
-          // Only label the ISS and naked-eye-visible satellites — labeling
-          // every Starlink dot was both unreadable and the main per-frame
-          // canvas cost in this loop.
-          if (isISS || s.tier === 'naked') {
+        // Draw orbit path if selected
+        if (selectedSatRef.current && orbitPathRef.current.length > 0) {
+          ctx.beginPath();
+          let first = true;
+          for (const pos of orbitPathRef.current) {
             const sp = worldToScreen(pos, camera, lw, lh);
-            if (sp) {
-              if (isISS) {
-                // Draw ISS as a visible crosshair + pulsing ring on the canvas
-                const t2 = performance.now() * 0.003;
-                const pulse = 8 + Math.sin(t2 * 3) * 4;
+            if (!sp) continue;
+            if (first) { ctx.moveTo(sp.x, sp.y); first = false; }
+            else { ctx.lineTo(sp.x, sp.y); }
+          }
+          ctx.strokeStyle = 'rgba(255,255,255,0.25)';
+          ctx.lineWidth = 1.5;
+          ctx.stroke();
+        }
 
-                // Outer pulsing ring
-                ctx.beginPath();
-                ctx.arc(sp.x, sp.y, pulse, 0, Math.PI * 2);
-                ctx.strokeStyle = 'rgba(0,255,136,0.5)';
-                ctx.lineWidth = 1.5;
-                ctx.stroke();
+        for (const s of cachedOverhead) {
+          const isSelected = selectedSatRef.current && selectedSatRef.current.noradId === s.noradId;
+          if (selectedSatRef.current && !isSelected) continue; // hide others if one is selected
 
-                // Inner dot
-                ctx.beginPath();
-                ctx.arc(sp.x, sp.y, 3, 0, Math.PI * 2);
-                ctx.fillStyle = '#00ff88';
-                ctx.fill();
+          const pos = horVec(s.az, s.el, 750);
+          const sp  = worldToScreen(pos, camera, lw, lh);
+          if (!sp) continue;
 
-                // Cross lines
-                ctx.strokeStyle = 'rgba(0,255,136,0.7)';
-                ctx.lineWidth = 1;
-                ctx.beginPath();
-                ctx.moveTo(sp.x - 14, sp.y); ctx.lineTo(sp.x - 6, sp.y);
-                ctx.moveTo(sp.x + 6, sp.y); ctx.lineTo(sp.x + 14, sp.y);
-                ctx.moveTo(sp.x, sp.y - 14); ctx.lineTo(sp.x, sp.y - 6);
-                ctx.moveTo(sp.x, sp.y + 6); ctx.lineTo(sp.x, sp.y + 14);
-                ctx.stroke();
+          drawnSatsRef.current.push({ s, x: sp.x, y: sp.y });
 
-                // Label
-                ctx.font = 'bold 11px Space Mono, monospace';
-                ctx.fillStyle = '#00ff88';
-                ctx.shadowColor = 'rgba(0,0,0,0.9)'; ctx.shadowBlur = 4;
-                ctx.fillText('ISS', sp.x + 16, sp.y - 6);
-                ctx.shadowBlur = 0;
-              } else {
-                // Naked-eye satellite: small circle + name
-                ctx.beginPath();
-                ctx.arc(sp.x, sp.y, 2.5, 0, Math.PI * 2);
-                ctx.fillStyle = '#66aaff';
-                ctx.fill();
+          const isISS      = s.type === 'iss';
+          const isStation  = s.type === 'iss' || s.name.includes('TIANGONG');
+          const isStarlink = s.type === 'starlink';
+          const isGPS      = s.type === 'gps';
+          const isNaked    = s.tier === 'naked';
 
-                ctx.font = '9px Space Mono, monospace';
-                ctx.fillStyle = '#66aaff';
-                ctx.shadowColor = 'rgba(0,0,0,0.9)'; ctx.shadowBlur = 3;
-                ctx.fillText(s.name.split(' ')[0], sp.x + 7, sp.y - 3);
-                ctx.shadowBlur = 0;
-              }
-            }
+          // ── colour by type ──────────────────────────────────────────
+          const dotColor   = isISS      ? '#00ff88'
+                           : isStarlink ? '#4488ff'
+                           : isGPS      ? '#ffd166'
+                           : isNaked    ? '#aaddff'
+                           :              '#5588aa';
+
+          const labelColor = isISS      ? '#00ff88'
+                           : isStarlink ? '#6699ff'
+                           : isGPS      ? '#ffd166'
+                           : isNaked    ? '#cce8ff'
+                           :              '#7799bb';
+
+          if (isISS) {
+            // ── ISS: large pulsing crosshair ────────────────────────
+            const outerR = 10 + pulseMag * 5;   // 10→15px pulsing ring
+
+            // outer glow ring
+            ctx.beginPath();
+            ctx.arc(sp.x, sp.y, outerR, 0, Math.PI * 2);
+            ctx.strokeStyle = `rgba(0,255,136,${0.15 + pulseMag * 0.25})`;
+            ctx.lineWidth   = 2;
+            ctx.stroke();
+
+            // inner solid ring
+            ctx.beginPath();
+            ctx.arc(sp.x, sp.y, 5, 0, Math.PI * 2);
+            ctx.strokeStyle = '#00ff88';
+            ctx.lineWidth   = 1.5;
+            ctx.stroke();
+
+            // centre dot
+            ctx.beginPath();
+            ctx.arc(sp.x, sp.y, 2.5, 0, Math.PI * 2);
+            ctx.fillStyle = '#00ff88';
+            ctx.fill();
+
+            // crosshair arms
+            ctx.strokeStyle = 'rgba(0,255,136,0.8)';
+            ctx.lineWidth   = 1;
+            const armOuter = outerR + 6, armInner = 7;
+            ctx.beginPath();
+            ctx.moveTo(sp.x - armOuter, sp.y); ctx.lineTo(sp.x - armInner, sp.y);
+            ctx.moveTo(sp.x + armInner, sp.y); ctx.lineTo(sp.x + armOuter, sp.y);
+            ctx.moveTo(sp.x, sp.y - armOuter); ctx.lineTo(sp.x, sp.y - armInner);
+            ctx.moveTo(sp.x, sp.y + armInner); ctx.lineTo(sp.x, sp.y + armOuter);
+            ctx.stroke();
+
+            // label — bold, with shadow box
+            const label = 'ISS';
+            ctx.font = 'bold 12px "Space Mono", monospace';
+            const tw = ctx.measureText(label).width;
+            const lx = sp.x + outerR + 8, ly = sp.y + 4;
+
+            // background pill
+            ctx.fillStyle = 'rgba(0,0,0,0.55)';
+            ctx.beginPath();
+            ctx.roundRect(lx - 4, ly - 13, tw + 8, 17, 3);
+            ctx.fill();
+
+            ctx.fillStyle = '#00ff88';
+            ctx.shadowColor = 'rgba(0,255,136,0.6)';
+            ctx.shadowBlur  = 6;
+            ctx.fillText(label, lx, ly);
+            ctx.shadowBlur  = 0;
+
+          } else if (isNaked || isStation) {
+            // ── Naked-eye / notable: diamond marker + name ──────────
+            const sz = isStation ? 6 : 4;
+
+            // diamond shape
+            ctx.beginPath();
+            ctx.moveTo(sp.x,      sp.y - sz);   // top
+            ctx.lineTo(sp.x + sz, sp.y);         // right
+            ctx.lineTo(sp.x,      sp.y + sz);   // bottom
+            ctx.lineTo(sp.x - sz, sp.y);         // left
+            ctx.closePath();
+            ctx.fillStyle   = dotColor;
+            ctx.shadowColor = dotColor;
+            ctx.shadowBlur  = 6;
+            ctx.fill();
+            ctx.shadowBlur  = 0;
+
+            // thin stroke outline
+            ctx.strokeStyle = 'rgba(255,255,255,0.3)';
+            ctx.lineWidth   = 0.5;
+            ctx.stroke();
+
+            // name label
+            const shortName = s.name.replace('STARLINK-', 'SL-')
+                                    .replace('GPS BIIR', 'GPS')
+                                    .replace('GPS BIIRM', 'GPS')
+                                    .replace('GPS BIIIA', 'GPS')
+                                    .split(' ')[0];
+
+            ctx.font = '9px "Space Mono", monospace';
+            const tw2 = ctx.measureText(shortName).width;
+            const lx2 = sp.x - tw2 / 2;
+            const ly2 = sp.y - sz - 5;
+
+            // label background
+            ctx.fillStyle = 'rgba(0,0,0,0.5)';
+            ctx.fillRect(lx2 - 2, ly2 - 9, tw2 + 4, 11);
+
+            ctx.fillStyle   = labelColor;
+            ctx.shadowColor = 'rgba(0,0,0,0.8)';
+            ctx.shadowBlur  = 3;
+            ctx.fillText(shortName, lx2, ly2);
+            ctx.shadowBlur  = 0;
+
+          } else if (isStarlink || isGPS) {
+            // ── Starlink / GPS: small circle, no label unless zoomed ─
+            const r = isGPS ? 3 : 2;
+
+            ctx.beginPath();
+            ctx.arc(sp.x, sp.y, r, 0, Math.PI * 2);
+            ctx.fillStyle   = dotColor + 'cc';   // 80% opacity
+            ctx.shadowColor = dotColor;
+            ctx.shadowBlur  = 4;
+            ctx.fill();
+            ctx.shadowBlur  = 0;
+
+            // tiny tick mark pointing away from horizon (elevation direction)
+            ctx.strokeStyle = dotColor + '66';
+            ctx.lineWidth   = 0.75;
+            ctx.beginPath();
+            ctx.moveTo(sp.x, sp.y - r - 1);
+            ctx.lineTo(sp.x, sp.y - r - 4);
+            ctx.stroke();
+
+            const shortName = s.name.replace('STARLINK-', 'SL-').replace('GPS BIIR', 'GPS').replace('GPS BIIIA', 'GPS').split(' ')[0];
+            ctx.font = '8px "Space Mono", monospace';
+            ctx.fillStyle = labelColor + '99';
+            ctx.fillText(shortName, sp.x + 5, sp.y + 3);
+
+          } else {
+            // ── Generic satellite: small dot + optional name ─────────
+            ctx.beginPath();
+            ctx.arc(sp.x, sp.y, 1.8, 0, Math.PI * 2);
+            ctx.fillStyle = 'rgba(100,150,200,0.7)';
+            ctx.fill();
+            
+            const shortName = s.name.split(' ')[0];
+            ctx.font = '8px "Space Mono", monospace';
+            ctx.fillStyle = 'rgba(100,150,200,0.6)';
+            ctx.fillText(shortName, sp.x + 4, sp.y + 3);
           }
         }
-        satPosAttr.needsUpdate = true;
-        satColAttr.needsUpdate = true;
-        satSizeAttr.needsUpdate = true;
-        satGeo.setDrawRange(0, count);
-      } else {
-        satGeo.setDrawRange(0, 0);
       }
 
       /* ── Planets (AzEl, pooled meshes) ── */
@@ -903,8 +987,6 @@ export default function ObservatoryPage() {
       window.removeEventListener('resize', onResize);
       renderer.domElement.removeEventListener('wheel', onWheel);
       controls.dispose();
-      satGeo.dispose();
-      satMat.dispose();
       unitCircleGeo.dispose();
       planetMeshes.forEach(m => (m.material as THREE.Material).dispose());
       planetGlowMeshes.forEach(m => (m.material as THREE.Material).dispose());
@@ -996,6 +1078,27 @@ export default function ObservatoryPage() {
     <div
       style={{ position: 'fixed', inset: 0, background: '#000008', overflow: 'hidden', touchAction: 'none' }}
       className={spaceMono.className}
+      onPointerDown={(e) => {
+        pointerDownPosRef.current = { x: e.clientX, y: e.clientY };
+      }}
+      onPointerUp={(e) => {
+        if (!pointerDownPosRef.current) return;
+        const dx = e.clientX - pointerDownPosRef.current.x;
+        const dy = e.clientY - pointerDownPosRef.current.y;
+        if (Math.sqrt(dx*dx + dy*dy) < 5) {
+          let closest = null;
+          let minDist = 15; // 15px hit radius
+          for (const item of drawnSatsRef.current) {
+            const dist = Math.sqrt(Math.pow(item.x - e.clientX, 2) + Math.pow(item.y - e.clientY, 2));
+            if (dist < minDist) {
+              minDist = dist;
+              closest = item.s;
+            }
+          }
+          setSelectedSat(closest);
+        }
+        pointerDownPosRef.current = null;
+      }}
     >
       {/* ── Three.js mount ── */}
       <div ref={mountRef} style={{ position: 'absolute', inset: 0, zIndex: 0 }} />
@@ -1281,6 +1384,58 @@ export default function ObservatoryPage() {
               {dispTime}
             </div>
           </div>
+
+          {/* ── RIGHT PANEL: Satellite Info ── */}
+          {selectedSat && (
+            <div style={{
+              position: 'absolute', top: 80, right: 20, width: 280, pointerEvents: 'auto',
+              background: 'rgba(4,8,24,0.85)', backdropFilter: 'blur(24px)',
+              border: '0.5px solid rgba(0,212,255,0.2)',
+              borderRadius: 16, padding: '20px',
+              boxShadow: '0 12px 40px rgba(0,0,0,0.6)',
+              color: '#fff'
+            }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16 }}>
+                <div>
+                  <h2 className={spaceGrotesk.className} style={{ fontSize: 16, fontWeight: 700, margin: '0 0 4px 0', letterSpacing: '0.05em' }}>
+                    {selectedSat.name}
+                  </h2>
+                  <div style={{ fontSize: 10, color: 'rgba(0,212,255,0.7)', textTransform: 'uppercase', letterSpacing: '0.1em' }}>
+                    {selectedSat.type === 'iss' ? 'Manned Station' : selectedSat.type} · NORAD {selectedSat.noradId}
+                  </div>
+                </div>
+                <button 
+                  onClick={() => setSelectedSat(null)}
+                  style={{ background: 'transparent', border: 'none', color: 'rgba(255,255,255,0.5)', cursor: 'pointer', fontSize: 20, padding: '0 4px', lineHeight: 1 }}
+                >×</button>
+              </div>
+
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 12, fontSize: 12 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                  <span style={{ color: 'rgba(255,255,255,0.4)' }}>Altitude</span>
+                  <span style={{ fontFamily: 'monospace' }}>{selectedSat.altKm.toFixed(1)} km</span>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                  <span style={{ color: 'rgba(255,255,255,0.4)' }}>Velocity</span>
+                  <span style={{ fontFamily: 'monospace' }}>{selectedSat.velKmS.toFixed(2)} km/s</span>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                  <span style={{ color: 'rgba(255,255,255,0.4)' }}>Period</span>
+                  <span style={{ fontFamily: 'monospace' }}>{selectedSat.periodMin.toFixed(1)} min</span>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                  <span style={{ color: 'rgba(255,255,255,0.4)' }}>Azimuth</span>
+                  <span style={{ fontFamily: 'monospace' }}>{selectedSat.az.toFixed(1)}°</span>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                  <span style={{ color: 'rgba(255,255,255,0.4)' }}>Elevation</span>
+                  <span style={{ fontFamily: 'monospace', color: selectedSat.el > 0 ? '#00ff88' : '#ff4444' }}>
+                    {selectedSat.el.toFixed(1)}°
+                  </span>
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* ── BOTTOM-CENTER: Main toolbar ── */}
           <div style={{
